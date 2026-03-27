@@ -389,7 +389,7 @@ Make it comprehensive, well-written, and properly sourced.""",
                     f"   URL: {source.get('url', 'N/A')}\n"
                     f"   Preview: {source.get('text', '')[:200]}..."
                 )
-        return "\n\n".join(formatted[:10])  # Limit to prevent token overflow
+        return "\n\n".join(formatted[:10]) 
     
     def _format_documents(self, docs: List[Dict]) -> str:
         """Format documents for prompts"""
