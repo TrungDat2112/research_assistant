@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "commitlens"
+version = "0.1.0"
+description = "AI-Powered Commit & Code Analyzer"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.15.0",
+    "rich>=13.9.0",
+    "gitpython>=3.1.43",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langchain-anthropic>=0.3.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "bandit>=1.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+]
+eval = [
+    "rouge-score>=0.1.2",
+    "pandas>=2.2.0",
+    "tabulate>=0.9.0",
+]
+streamlit = [
+    "streamlit>=1.40.0",
+]
+
+[project.scripts]
+commitlens = "commitlens.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/commitlens"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=src/commitlens --cov-report=term-missing"
