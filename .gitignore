@@ -1,0 +1,90 @@
+# ==== Python ====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ==== Virtual envs ====
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ==== uv ====
+# keep uv.lock in repo for reproducibility
+# uv.lock
+
+# ==== Secrets & config ====
+.env
+.env.*
+!.env.example
+
+# ==== IDE / editor ====
+.vscode/
+.idea/
+*.swp
+*.swo
+.cursor/
+.DS_Store
+Thumbs.db
+
+# ==== Testing / coverage ====
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ==== Notebooks ====
+.ipynb_checkpoints/
+notebooks/**/output/
+notebooks/**/*.tmp.ipynb
+
+# ==== Data (large / generated) ====
+# Keep folder structure via .gitkeep; ignore every other file under these dirs.
+data/raw/*
+data/processed/*
+data/eval/*.parquet
+data/eval/*.jsonl
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/eval/.gitkeep
+
+# ==== Qdrant / local vector stores ====
+qdrant_storage/
+chroma_db/
+*.sqlite3
+*.db
+
+# ==== Logs / traces ====
+logs/
+*.log
+traces/
+
+# ==== Streamlit ====
+.streamlit/secrets.toml
