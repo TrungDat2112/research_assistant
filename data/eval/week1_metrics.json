@@ -1,0 +1,100 @@
+{
+  "total_cost_usd": 0.128214,
+  "total_wallclock_s": 178.8,
+  "queries": [
+    {
+      "index": 1,
+      "query": "So sánh LoRA và QLoRA cho fine-tuning LLM năm 2026",
+      "language": "vi",
+      "status": "ok",
+      "cost_usd": 0.019665,
+      "wallclock_s": 20.18,
+      "n_sub_questions": 1,
+      "n_drafts": 1,
+      "evidence_counts": {
+        "sq_1": 5
+      },
+      "total_citations": 4,
+      "trace_steps": 4
+    },
+    {
+      "index": 2,
+      "query": "Retrieval-Augmented Generation là gì, khi nào nên dùng thay vì fine-tuning?",
+      "language": "vi",
+      "status": "ok",
+      "cost_usd": 0.027196,
+      "wallclock_s": 37.9,
+      "n_sub_questions": 5,
+      "n_drafts": 5,
+      "evidence_counts": {
+        "sq_1": 5,
+        "sq_2": 5,
+        "sq_3": 5,
+        "sq_4": 5,
+        "sq_5": 5
+      },
+      "total_citations": 17,
+      "trace_steps": 12
+    },
+    {
+      "index": 3,
+      "query": "What are the latest advances in reasoning models like OpenAI o3 and DeepSeek R1 in 2026?",
+      "language": "en",
+      "status": "ok",
+      "cost_usd": 0.026257,
+      "wallclock_s": 39.71,
+      "n_sub_questions": 6,
+      "n_drafts": 6,
+      "evidence_counts": {
+        "sq_1": 5,
+        "sq_2": 5,
+        "sq_3": 5,
+        "sq_4": 5,
+        "sq_5": 0,
+        "sq_6": 5
+      },
+      "total_citations": 16,
+      "trace_steps": 14
+    },
+    {
+      "index": 4,
+      "query": "Compare vector databases: Qdrant vs Weaviate vs Milvus for production RAG",
+      "language": "en",
+      "status": "ok",
+      "cost_usd": 0.030302,
+      "wallclock_s": 43.96,
+      "n_sub_questions": 7,
+      "n_drafts": 7,
+      "evidence_counts": {
+        "sq_1": 5,
+        "sq_2": 5,
+        "sq_3": 5,
+        "sq_4": 1,
+        "sq_5": 0,
+        "sq_6": 0,
+        "sq_7": 5
+      },
+      "total_citations": 15,
+      "trace_steps": 16
+    },
+    {
+      "index": 5,
+      "query": "What is Agentic RAG and how does it differ from traditional RAG?",
+      "language": "en",
+      "status": "ok",
+      "cost_usd": 0.024794,
+      "wallclock_s": 37.06,
+      "n_sub_questions": 5,
+      "n_drafts": 5,
+      "evidence_counts": {
+        "sq_1": 5,
+        "sq_2": 5,
+        "sq_3": 5,
+        "sq_4": 5,
+        "sq_5": 5
+      },
+      "total_citations": 19,
+      "trace_steps": 12
+    }
+  ]
+}
