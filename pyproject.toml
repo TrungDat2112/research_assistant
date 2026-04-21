@@ -79,12 +79,17 @@ select = [
 ignore = [
     "ANN401", # allow typing.Any where explicitly needed (tool args from LLM)
     "E501",   # handled by formatter
+    "TC001",  # moving first-party imports into TYPE_CHECKING adds noise
+    "TC002",  # same for third-party imports that are used at runtime (e.g. pytest fixtures)
+    "TC003",  # same for stdlib
+    "TC006",  # cast() without string literal — readability regression, skip
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "S101"]
 "notebooks/**" = ["ANN", "E402"]
 "ui/**" = ["ANN201"] # streamlit scripts don't need return type on module
+"src/research_assistant/cli.py" = ["T201"] # CLI prints to stdout intentionally
 
 [tool.ruff.format]
 quote-style = "double"
