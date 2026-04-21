@@ -27,8 +27,7 @@ QUERIES: list[tuple[str, Literal["vi", "en"]]] = [
     ("So sánh LoRA và QLoRA cho fine-tuning LLM năm 2026", "vi"),
     ("Retrieval-Augmented Generation là gì, khi nào nên dùng thay vì fine-tuning?", "vi"),
     (
-        "What are the latest advances in reasoning models like OpenAI o3 and "
-        "DeepSeek R1 in 2026?",
+        "What are the latest advances in reasoning models like OpenAI o3 and DeepSeek R1 in 2026?",
         "en",
     ),
     ("Compare vector databases: Qdrant vs Weaviate vs Milvus for production RAG", "en"),
@@ -80,7 +79,7 @@ def main() -> int:
 
         try:
             final: Any = graph.invoke(initial)
-        except Exception:  # noqa: BLE001 — smoke test must survive to the next query
+        except Exception:
             logger.exception("Query %d failed; recording and continuing.", idx)
             metrics.append(
                 {

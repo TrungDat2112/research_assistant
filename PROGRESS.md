@@ -7,14 +7,14 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 1 hoàn tất — pipeline end-to-end chạy 5/5 query, cost $0.13/$10 budget.`
+**Phase**: `Tuần 1 hoàn tất + 2 fix chất lượng (planner structured output, retriever fallback ladder).`
 **Last updated**: 2026-04-21
 **Last session summary**:
-- Implement Part B đầy đủ: web_search (Tavily), ResearchState + 5 Pydantic models, 3 prompt templates Jinja2, 3 agent nodes (planner/synthesizer/reporter), LangGraph wiring, Streamlit UI, CLI.
-- 24 unit tests (state, prompts, web_search, agents, graph) — tất cả mock LLM + Tavily, không tốn API.
-- Toolchain: `ruff check` ✓ | `ruff format --check` ✓ | `mypy` strict ✓ (18 files) | `pytest -q` ✓ (31/31 passed trong 2.77s).
-- **Smoke test 5 query thật**: tổng cost `$0.1282` (vs $10 cap) · tổng wallclock 178.8s · tất cả 5 status=ok · 71 citations tổng cộng · outputs lưu ở `data/eval/week1_outputs.md` + metrics `data/eval/week1_metrics.json`.
-- **Exit criteria Tuần 1 đạt**: 5/5 query end-to-end ✓, citation `[^N]` đầy đủ ✓, cost $0.13 << $1 ✓, trace có (Langfuse optional, đang `enabled` trong `.env`).
+- **Fix 1 — Planner structured output**: thay `invoke_llm` + regex/JSON-parse bằng `invoke_structured_llm` (mới) dùng `ChatAnthropic.with_structured_output(_PlanDraft, include_raw=True)`. Schema `_PlanDraft`/`_PlanItemDraft` dùng field description để hướng dẫn LLM; validation `min_length` vẫn giữ ở `SubQuestion` → fallback path tiếp tục hoạt động khi draft không đạt. Prompt `planner_v1.jinja` đơn giản hoá (bỏ "return JSON only" instructions — tool-use tự lo shape).
+- **Fix 2 — Retriever fallback ladder**: thêm `web_search_with_fallback(query)` chạy 3 tầng: (1) basic+year, (2) nếu 0 hits → advanced+year, (3) nếu vẫn 0 hits và query chứa token năm → strip năm + advanced. Retriever mặc định dùng hàm này; `web_search` cũ giữ nguyên cho callers muốn single-shot.
+- **Verify**: re-run query 1 (VI LoRA/QLoRA) → plan 5 sub-q (trước: fallback 1), cost $0.0333. Re-run query 4 (EN vector DB) → 6/6 sub-q đều có evidence (trước: 2 sub-q zero hits), 30 refs, cost $0.0389. Các câu "Insufficient evidence" còn lại là content-relevance issue chứ không phải retrieval failure.
+- **Test**: +5 cases (`test_web_search.py` stage ladder + `_simplify_query`), refactor planner tests sang stub `invoke_structured_llm`, graph test update path. `pytest -q` 36/36 ✓ trong 2.25s.
+- **Toolchain**: `ruff check` ✓ · `ruff format` ✓ · `mypy` strict ✓ (29 files) · `pytest` 36/36 ✓.
 
 ---
 
@@ -96,13 +96,14 @@ d:\research-assistant\
 | Có trace | ✓ 4–16 StepLog / query (Langfuse detect qua settings) |
 
 ### Việc tiếp theo — Tuần 2 (session sau)
-1. [ ] **Fix**: Planner đôi khi xuất JSON invalid (query 1 VI đã fallback 1 sub-q). Cân nhắc `ChatAnthropic.with_structured_output(SubQuestion)` hoặc retry-with-repair prompt.
-2. [ ] **Improve**: Retriever trả 0 hits cho 3/33 sub-queries (query 3 sq_5, query 4 sq_5+sq_6). Thêm fallback: giảm độ cụ thể của query, hoặc cho phép `search_depth="advanced"`.
+1. [x] ~~**Fix**: Planner JSON invalid → structured output~~ (done 2026-04-21, session 4).
+2. [x] ~~**Improve**: Retriever 0-hits fallback ladder~~ (done 2026-04-21, session 4).
 3. [ ] **Instrument Langfuse**: decorator `@observe` cho từng node + `trace.update(input/output)`; link `trace_id` trong report footer.
 4. [ ] **Bắt đầu RAG pipeline (PLAN.md §5)**: ingestion (arXiv + HTML), chunking, embedding bằng bge-m3, Chroma dev store.
 5. [ ] **Hybrid retrieval stage 1**: BM25 + dense → top-50 candidates.
 6. [ ] **Critic agent** (draft) — kiểm citation coverage, output schema kiểm query → quyết định loop thêm hay pass.
 7. [ ] Chuyển `cli.py` vào `[project.scripts]` để gọi `uv run research-assistant "query"` trực tiếp.
+8. [ ] Re-run full 5-query smoke để đo delta cost/quality sau 2 fix (dự kiến cost tăng ~20% do advanced depth retry, plan tăng trung bình 3 → 5 sub-q).
 
 ### Notes / cảnh báo ghi nhớ
 - Haiku 4.5 pricing trong `agents/_llm.py._PRICING_USD_PER_MTOK` đang là ước lượng conservative (input $1 / output $5 per MTok). Cần kiểm lại tại `https://www.anthropic.com/pricing` khi có thời gian và cập nhật nếu lệch > 20%.
@@ -176,6 +177,14 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
   **Total**: $0.1282 · 178.8s · 71 citations · 5/5 ok.
 - **Blocker**: không.
 - **Next**: Tuần 2 — structured output cho planner, RAG pipeline (ingest + chunk + embed + BM25+dense), Critic agent, Langfuse instrumentation chi tiết. Xem § "Việc tiếp theo".
+
+### 2026-04-21 — Session 4 (Quality fixes — structured output + retriever fallback)
+- **Fix 1 — Planner**: `agents/_llm.py` tách helper `_preflight_budget_check` + `_normalise_text`, thêm `invoke_structured_llm(model, prompt, schema, ...)` trả `(parsed: BaseModel, LLMCallResult)` bằng `with_structured_output(include_raw=True)`. Planner rewrite: định nghĩa `_PlanDraft` + `_PlanItemDraft` (no min_length ở draft — validation chặt dời sang `SubQuestion`), hàm `_drafts_to_plan` renumber ids + drop unknown dependency_ids. Prompt đơn giản hoá (bỏ phần "return JSON only"), field description gắn thẳng trên schema.
+- **Fix 2 — Retriever**: `tools/web_search.py` thêm `_YEAR_PATTERN`/`_IN_YEAR_PATTERN`, helper `_simplify_query`, và `web_search_with_fallback(query, ...)` theo ladder basic → advanced → simplified-advanced. `graph/research_graph.py` đổi default `search_fn` sang hàm fallback.
+- **Tests**: update `test_agents.py` (stub `invoke_structured_llm`, loại test JSON-markdown-wrapped, thêm case drop unknown deps + invalid draft), thêm 4 case fallback ladder trong `test_web_search.py`, refactor `test_graph.py` sang dual-stub (planner structured + synthesizer llm). Total 36 pass (từ 31).
+- **Verify thực tế**: `verify_q1.md` (LoRA/QLoRA, VI) plan 5 sub-q · cost $0.0333 · 25 refs. `verify_q4.md` (vector DB, EN) plan 6 sub-q · cost $0.0389 · 30 refs (tất cả sub-q có evidence). Files đã xoá sau verify (không cần giữ như regression baseline — `data/eval/week1_outputs.md` vẫn là baseline chính).
+- **Blocker**: không. Còn observation: câu trả lời "Insufficient evidence" trong query 4 xuất phát từ Synthesizer không tìm được fact cụ thể trong snippet — cần Critic/RAG sâu hơn để khắc phục, sẽ vào Tuần 2.
+- **Next**: Langfuse `@observe` instrumentation + bắt đầu RAG ingestion.
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)
