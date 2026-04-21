@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage
+from pydantic import BaseModel
 
 from research_assistant.config import get_settings
+
+_SchemaT = TypeVar("_SchemaT", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +113,46 @@ def build_chat_model(
     )
 
 
+def _preflight_budget_check(
+    model: str,
+    prompt: str,
+    *,
+    max_tokens: int,
+    current_cost_usd: float,
+    per_query_cap_usd: float | None,
+) -> None:
+    """Raise :class:`BudgetExceededError` before contacting the provider
+    when the projected worst-case spend would breach the per-query cap.
+
+    Approximation is deliberately conservative (uses ``max_tokens`` for
+    the output side and a coarse char→token ratio for input) so the cap
+    is never silently overshot.
+    """
+    cap = per_query_cap_usd if per_query_cap_usd is not None else get_settings().per_query_cap_usd
+    projected_worst = current_cost_usd + estimate_cost_usd(
+        model,
+        tokens_in=len(prompt) // 3,
+        tokens_out=max_tokens,
+    )
+    if projected_worst > cap:
+        raise BudgetExceededError(
+            f"Refusing call to {model}: projected worst-case ${projected_worst:.4f} "
+            f"would exceed per-query cap ${cap:.2f} "
+            f"(already spent ${current_cost_usd:.4f}).",
+        )
+
+
+def _normalise_text(content: Any) -> str:
+    """Flatten LangChain content (str or list-of-blocks) into plain text."""
+    if isinstance(content, list):
+        parts = [
+            str(block.get("text", "")) if isinstance(block, dict) else str(block)
+            for block in content
+        ]
+        return "".join(parts)
+    return str(content)
+
+
 def invoke_llm(
     model: str,
     prompt: str,
@@ -122,56 +165,91 @@ def invoke_llm(
 ) -> LLMCallResult:
     """Invoke the chat model and return a cost-annotated result.
 
-    Enforces the per-query budget cap **before** the call by estimating
-    worst-case cost (``max_tokens`` output at the model's rate) plus the
-    already-accumulated ``current_cost_usd``. When the projected total
-    would exceed ``per_query_cap_usd`` we raise :class:`BudgetExceededError`
-    without contacting the provider — per ADR-011.
+    Enforces the per-query budget cap **before** the call (see
+    :func:`_preflight_budget_check`), per ADR-011.
     """
-    cap = per_query_cap_usd if per_query_cap_usd is not None else get_settings().per_query_cap_usd
-
-    # Conservative pre-flight estimate: assume max_tokens output, ignoring
-    # prompt length (which is bounded by Anthropic context limits anyway).
-    projected_worst = current_cost_usd + estimate_cost_usd(
+    _preflight_budget_check(
         model,
-        tokens_in=len(prompt) // 3,  # rough char→token ratio, only for guard
-        tokens_out=max_tokens,
-    )
-    if projected_worst > cap:
-        raise BudgetExceededError(
-            f"Refusing call to {model}: projected worst-case ${projected_worst:.4f} "
-            f"would exceed per-query cap ${cap:.2f} "
-            f"(already spent ${current_cost_usd:.4f}).",
-        )
-
-    chat = build_chat_model(
-        model,
-        temperature=temperature,
+        prompt,
         max_tokens=max_tokens,
+        current_cost_usd=current_cost_usd,
+        per_query_cap_usd=per_query_cap_usd,
     )
+
+    chat = build_chat_model(model, temperature=temperature, max_tokens=max_tokens)
     messages: list[BaseMessage | dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
     response = chat.invoke(messages)
-
     tokens_in, tokens_out = _extract_usage(response)
     cost = estimate_cost_usd(model, tokens_in, tokens_out)
 
-    # Normalise content to a flat string (LangChain can return list-of-blocks).
-    content = response.content
-    if isinstance(content, list):
-        text_parts = [
-            str(block.get("text", "")) if isinstance(block, dict) else str(block)
-            for block in content
-        ]
-        text = "".join(text_parts)
-    else:
-        text = str(content)
-
     return LLMCallResult(
-        text=text,
+        text=_normalise_text(response.content),
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=cost,
+        model=model,
+    )
+
+
+def invoke_structured_llm(
+    model: str,
+    prompt: str,
+    schema: type[_SchemaT],
+    *,
+    temperature: float = 0.0,
+    max_tokens: int = 2048,
+    system: str | None = None,
+    current_cost_usd: float = 0.0,
+    per_query_cap_usd: float | None = None,
+) -> tuple[_SchemaT, LLMCallResult]:
+    """Invoke the chat model with a strict Pydantic schema and return
+    ``(parsed_instance, cost_result)``.
+
+    Uses ``ChatAnthropic.with_structured_output(schema, include_raw=True)``
+    so Anthropic's native tool-use machinery guarantees a shape-valid
+    JSON response — replacing the fragile "ask for JSON and hope" path
+    used pre-fix. ``include_raw=True`` returns a dict with ``raw``,
+    ``parsed`` and ``parsing_error`` keys so we can still recover token
+    usage (which lives on the raw ``AIMessage``) after parsing.
+    """
+    _preflight_budget_check(
+        model,
+        prompt,
+        max_tokens=max_tokens,
+        current_cost_usd=current_cost_usd,
+        per_query_cap_usd=per_query_cap_usd,
+    )
+
+    chat = build_chat_model(model, temperature=temperature, max_tokens=max_tokens)
+    structured = chat.with_structured_output(schema, include_raw=True)
+
+    messages: list[BaseMessage | dict[str, Any]] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    response: dict[str, Any] = structured.invoke(messages)  # type: ignore[assignment]
+    raw = response.get("raw")
+    parsed = response.get("parsed")
+    parsing_error = response.get("parsing_error")
+
+    if parsed is None:
+        raise RuntimeError(
+            f"Structured output returned no parsed value (parsing_error={parsing_error!r}).",
+        )
+
+    if isinstance(raw, BaseMessage):
+        tokens_in, tokens_out = _extract_usage(raw)
+    else:
+        tokens_in = tokens_out = 0
+    cost = estimate_cost_usd(model, tokens_in, tokens_out)
+
+    return cast(_SchemaT, parsed), LLMCallResult(
+        text=_normalise_text(raw.content) if isinstance(raw, BaseMessage) else "",
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         cost_usd=cost,

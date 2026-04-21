@@ -9,33 +9,18 @@ Hard requirements for every sub-question:
   (general → specific).
 - Minimum 3, maximum 7 sub-questions.
 
-You MUST return a JSON array exactly matching this shape (no prose, no
-markdown fences, no explanations outside the JSON):
-
-[
-  {
-    "id": "sq_1",
-    "question": "<one self-contained question>",
-    "rationale": "<1 short sentence on why this sub-question matters>",
-    "suggested_tools": ["web_search"],
-    "dependency_ids": []
-  },
-  ...
-]
-
-Rules:
-- Use ids sq_1, sq_2, ... in order.
-- `suggested_tools` must be a non-empty list. For Week 1, only
+Per-field guidance:
+- `question`: one complete, self-contained sub-question in
+  {% if output_language == "vi" %}Vietnamese{% else %}English{% endif %}.
+  Keep proper nouns and technical terms in their original form.
+- `rationale`: one short sentence explaining why this sub-question matters.
+- `suggested_tools`: must be a non-empty list. For Week 1, only
   "web_search" is available, so always include it.
-- `dependency_ids` lists prior sub-question ids that must be answered first;
-  use [] for independent sub-questions.
-- Write sub-questions in {% if output_language == "vi" %}Vietnamese{% else %}English{% endif %}
-  so the final report stays in the user's language; keep proper nouns and
-  technical terms in their original form.
+- `dependency_ids`: list of ids for prior sub-questions that must be
+  answered first; use [] for independent ones. Valid id pattern is
+  `sq_1`, `sq_2`, ... in order.
 
 User research question:
 <<<
 {{ query }}
 >>>
-
-Return ONLY the JSON array.

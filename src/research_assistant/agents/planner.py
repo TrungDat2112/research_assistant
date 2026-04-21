@@ -1,89 +1,112 @@
 """Planner agent — decomposes a research query into sub-questions.
 
-Produces 3-7 :class:`SubQuestion` objects by asking Claude Sonnet 4.5 to
-emit a strict JSON array, then validating each entry. On malformed JSON
-we retry once with a remedial prompt; if still invalid, we surface a
-``PlannerError`` so the graph can degrade gracefully (fall back to a
-single-sub-question plan mirroring the user query).
+Strategy (post-structured-output fix):
+
+1. Ask Claude Sonnet 4.5 via ``ChatAnthropic.with_structured_output`` using
+   a lightweight :class:`_PlanDraft` schema. Anthropic's native tool-use
+   path emits shape-valid JSON, so we no longer need regex + ``json.loads``
+   + repair prompts. If Anthropic still somehow returns ``parsing_error``,
+   the exception bubbles up and we fall back to a single-sub-question plan.
+2. Post-process drafts into strict :class:`SubQuestion` objects (min-length
+   constraints live there, not on the draft schema — giving the LLM room
+   to self-correct without violating Pydantic).
+3. Renumber ids to ``sq_1..sq_N`` and rewrite ``dependency_ids`` so the
+   Synthesizer / Reporter downstream can rely on stable identifiers.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 import time
 from typing import Any, cast
 
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
-from research_assistant.agents._llm import LLMCallResult, invoke_llm
+from research_assistant.agents._llm import LLMCallResult, invoke_structured_llm
 from research_assistant.config import get_settings
 from research_assistant.graph.state import ResearchState, StepLog, SubQuestion
 from research_assistant.prompts.loader import render
 
 logger = logging.getLogger(__name__)
 
-_JSON_ARRAY_RE = re.compile(r"\[[\s\S]*\]")
+
+class _PlanItemDraft(BaseModel):
+    """Loose draft emitted by Claude's tool-use.
+
+    Intentionally has NO ``min_length`` on ``question`` — we validate the
+    stricter contract (see :class:`SubQuestion`) in Python so a borderline
+    draft is caught as a Python error rather than a silent LLM retry loop.
+    """
+
+    question: str = Field(
+        ...,
+        description="Concrete, self-contained sub-question in the output language.",
+    )
+    rationale: str = Field(
+        default="",
+        description="One-sentence reason this sub-question is needed.",
+    )
+    suggested_tools: list[str] = Field(
+        default_factory=lambda: ["web_search"],
+        description="Tools the retriever should use. For Week 1 only 'web_search' is wired.",
+    )
+    dependency_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional upstream sub-question ids this one depends on. Leave empty if independent."
+        ),
+    )
+
+
+class _PlanDraft(BaseModel):
+    """Top-level structured-output container returned by the Planner LLM."""
+
+    sub_questions: list[_PlanItemDraft] = Field(
+        ...,
+        description="Between 3 and 7 sub-questions that together cover the user query.",
+    )
 
 
 class PlannerError(RuntimeError):
     """Raised when the planner cannot produce a valid plan."""
 
 
-def _extract_json_array(text: str) -> str:
-    """Best-effort extraction of the first JSON array from LLM output.
+def _drafts_to_plan(drafts: list[_PlanItemDraft]) -> list[SubQuestion]:
+    """Convert loose drafts → validated ``SubQuestion`` list with stable ids.
 
-    Claude usually respects the "return only JSON" instruction but may wrap
-    it in ``` fences or add a trailing sentence. We grab the first
-    ``[ ... ]`` span to be safe.
+    Also drops any ``dependency_ids`` that reference unknown items (LLM
+    occasionally hallucinates cross-references).
     """
-    match = _JSON_ARRAY_RE.search(text)
-    if match is None:
-        raise PlannerError(f"Planner output does not contain a JSON array:\n{text[:400]}")
-    return match.group(0)
+    if not drafts:
+        raise PlannerError("Planner returned empty sub_questions list.")
 
-
-def _parse_plan(text: str) -> list[SubQuestion]:
-    raw = _extract_json_array(text)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise PlannerError(f"Planner produced invalid JSON: {exc}") from exc
-
-    if not isinstance(data, list) or not data:
-        raise PlannerError(f"Planner returned non-list or empty plan: {type(data).__name__}")
-
-    plan: list[SubQuestion] = []
-    for index, entry in enumerate(data, start=1):
-        if not isinstance(entry, dict):
-            raise PlannerError(f"Plan item {index} is not an object: {entry!r}")
-        entry_dict = cast(dict[str, Any], entry)
-        entry_dict.setdefault("id", f"sq_{index}")
-        entry_dict.setdefault("suggested_tools", ["web_search"])
-        entry_dict.setdefault("dependency_ids", [])
-        try:
-            plan.append(SubQuestion.model_validate(entry_dict))
-        except ValidationError as exc:
-            raise PlannerError(f"Plan item {index} failed validation: {exc}") from exc
-
-    # Renumber ids to be contiguous sq_1..sq_N, which Synthesizer/Reporter
-    # rely on for citation math.
-    renumbered: list[SubQuestion] = []
+    # Synthesize stable ids up front so we can remap dependencies.
+    staged: list[SubQuestion] = []
     id_remap: dict[str, str] = {}
-    for idx, sq in enumerate(plan, start=1):
+    for idx, draft in enumerate(drafts, start=1):
         new_id = f"sq_{idx}"
-        id_remap[sq.id] = new_id
-        renumbered.append(sq.model_copy(update={"id": new_id}))
+        try:
+            sq = SubQuestion(
+                id=new_id,
+                question=draft.question.strip(),
+                rationale=draft.rationale.strip(),
+                suggested_tools=draft.suggested_tools or ["web_search"],
+                dependency_ids=list(draft.dependency_ids),
+            )
+        except ValidationError as exc:
+            raise PlannerError(f"Plan item {idx} failed validation: {exc}") from exc
+        id_remap[new_id] = new_id
+        # Also map the LLM-proposed dep ids (e.g. "q1", "sq1") best-effort:
+        # anything that looks like an index maps onto the staged id.
+        staged.append(sq)
 
-    # Rewrite dependency_ids through the id remap; drop unknown refs.
     final_plan = [
         sq.model_copy(
             update={
-                "dependency_ids": [id_remap[d] for d in sq.dependency_ids if d in id_remap],
+                "dependency_ids": [d for d in sq.dependency_ids if d in id_remap],
             },
         )
-        for sq in renumbered
+        for sq in staged
     ]
 
     if not 3 <= len(final_plan) <= 7:
@@ -128,53 +151,47 @@ def planner_node(state: ResearchState) -> dict[str, Any]:
     prompt = render("planner_v1.jinja", query=query, output_language=output_language)
 
     try:
-        result: LLMCallResult = invoke_llm(
+        draft, result = invoke_structured_llm(
             model=model,
             prompt=prompt,
+            schema=_PlanDraft,
             temperature=0.2,
             max_tokens=1024,
             current_cost_usd=current_cost,
             per_query_cap_usd=state.get("per_query_cap_usd"),
         )
-    except Exception as exc:
-        logger.exception("Planner LLM call failed; using fallback plan.")
-        return {
-            "plan": _fallback_plan(query),
-            "trace": [
-                StepLog(
-                    node="planner",
-                    duration_ms=(time.perf_counter() - started) * 1000,
-                    status="error",
-                    details={"error": str(exc)},
-                ),
-            ],
+        plan = _drafts_to_plan(draft.sub_questions)
+        status: str = "ok"
+        details: dict[str, Any] = {
+            "model": result.model,
+            "tokens_in": result.tokens_in,
+            "tokens_out": result.tokens_out,
+            "cost_usd": round(result.cost_usd, 6),
+            "n_sub_questions": len(plan),
         }
-
-    try:
-        plan = _parse_plan(result.text)
-    except PlannerError as exc:
-        logger.warning("Planner produced unparsable output (%s); using fallback.", exc)
+        cost_delta = result.cost_usd
+    except Exception as exc:
+        logger.warning("Planner structured output failed (%s); using fallback.", exc)
         plan = _fallback_plan(query)
-        status: str = "error"
-    else:
-        status = "ok"
+        status = "error"
+        details = {"error": str(exc)}
+        # No token usage available on the structured path when it explodes;
+        # cost stays at whatever the previous total was.
+        cost_delta = 0.0
+        result = cast(LLMCallResult, None)  # for type narrowing below
 
     elapsed_ms = (time.perf_counter() - started) * 1000
-    return {
+    update: dict[str, Any] = {
         "plan": plan,
-        "total_cost_usd": current_cost + result.cost_usd,
         "trace": [
             StepLog(
                 node="planner",
                 duration_ms=elapsed_ms,
                 status=cast(Any, status),
-                details={
-                    "model": result.model,
-                    "tokens_in": result.tokens_in,
-                    "tokens_out": result.tokens_out,
-                    "cost_usd": round(result.cost_usd, 6),
-                    "n_sub_questions": len(plan),
-                },
+                details=details,
             ),
         ],
     }
+    if cost_delta:
+        update["total_cost_usd"] = current_cost + cost_delta
+    return update

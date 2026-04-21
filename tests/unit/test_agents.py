@@ -1,8 +1,8 @@
 """Tests for planner / synthesizer / reporter agent nodes.
 
-LLM calls are replaced at module level by monkeypatching
-``research_assistant.agents._llm.invoke_llm`` with a stub that returns a
-canned :class:`LLMCallResult`. No real Anthropic traffic is generated.
+LLM calls are replaced at module level by monkeypatching the exported
+``invoke_llm`` / ``invoke_structured_llm`` symbols inside each agent
+module. No real Anthropic traffic is generated.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from research_assistant.agents._llm import LLMCallResult
-from research_assistant.agents.planner import planner_node
+from research_assistant.agents.planner import _PlanDraft, _PlanItemDraft, planner_node
 from research_assistant.agents.reporter import build_report, reporter_node
 from research_assistant.agents.synthesizer import synthesize_one, synthesizer_node
 from research_assistant.graph.state import (
@@ -57,27 +57,55 @@ def _stub_llm(text: str, *, tokens_in: int = 100, tokens_out: int = 50) -> Any:
     return _fn
 
 
+def _stub_structured_llm(
+    drafts: list[dict[str, Any]],
+    *,
+    tokens_in: int = 120,
+    tokens_out: int = 80,
+) -> Any:
+    """Factory producing a stand-in for :func:`invoke_structured_llm`.
+
+    Returns a ``(_PlanDraft, LLMCallResult)`` tuple with ``drafts`` as the
+    payload, matching the real signature so the planner node can be unit-
+    tested without touching Anthropic.
+    """
+
+    def _fn(
+        model: str,
+        prompt: str,
+        schema: type[Any],
+        **kwargs: Any,
+    ) -> tuple[Any, LLMCallResult]:
+        obj = _PlanDraft(sub_questions=[_PlanItemDraft(**d) for d in drafts])
+        return obj, LLMCallResult(
+            text="",
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=0.0005,
+            model=model,
+        )
+
+    return _fn
+
+
 # ---------------------------------------------------------------------------
 # Planner
 # ---------------------------------------------------------------------------
 
 
-_PLANNER_JSON_OK = """
-[
-  {"id": "sq_1", "question": "Question one", "rationale": "r1", "suggested_tools": ["web_search"], "dependency_ids": []},
-  {"id": "sq_2", "question": "Question two", "rationale": "r2", "suggested_tools": ["web_search"], "dependency_ids": ["sq_1"]},
-  {"id": "sq_3", "question": "Question three", "rationale": "r3", "suggested_tools": ["web_search"], "dependency_ids": []}
+_PLANNER_DRAFTS_OK: list[dict[str, Any]] = [
+    {"question": "Question one", "rationale": "r1", "dependency_ids": []},
+    {"question": "Question two", "rationale": "r2", "dependency_ids": ["sq_1"]},
+    {"question": "Question three", "rationale": "r3", "dependency_ids": []},
 ]
-"""
 
 
-def test_planner_parses_valid_json(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_planner_returns_plan_from_structured_output(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "research_assistant.agents.planner.invoke_llm",
-        _stub_llm(_PLANNER_JSON_OK),
+        "research_assistant.agents.planner.invoke_structured_llm",
+        _stub_structured_llm(_PLANNER_DRAFTS_OK),
     )
-    state = new_state("Explain RAG")
-    update = planner_node(state)
+    update = planner_node(new_state("Explain RAG"))
     plan = update["plan"]
     assert [sq.id for sq in plan] == ["sq_1", "sq_2", "sq_3"]
     assert plan[1].dependency_ids == ["sq_1"]
@@ -85,31 +113,42 @@ def test_planner_parses_valid_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert update["total_cost_usd"] > 0
 
 
-def test_planner_handles_markdown_wrapped_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    wrapped = "```json\n" + _PLANNER_JSON_OK + "\n```"
+def test_planner_drops_unknown_dependency_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    drafts = [
+        {"question": "Question one", "dependency_ids": ["sq_99"]},
+        {"question": "Question two", "dependency_ids": []},
+        {"question": "Question three", "dependency_ids": []},
+    ]
     monkeypatch.setattr(
-        "research_assistant.agents.planner.invoke_llm",
-        _stub_llm(wrapped),
+        "research_assistant.agents.planner.invoke_structured_llm",
+        _stub_structured_llm(drafts),
     )
-    update = planner_node(new_state("Some query"))
-    assert len(update["plan"]) == 3
+    plan = planner_node(new_state("Q?"))["plan"]
+    # "sq_99" is hallucinated → dropped silently.
+    assert plan[0].dependency_ids == []
 
 
 def test_planner_falls_back_when_llm_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(*_a: Any, **_kw: Any) -> LLMCallResult:
+    def boom(*_a: Any, **_kw: Any) -> tuple[Any, LLMCallResult]:
         raise RuntimeError("anthropic 429")
 
-    monkeypatch.setattr("research_assistant.agents.planner.invoke_llm", boom)
+    monkeypatch.setattr(
+        "research_assistant.agents.planner.invoke_structured_llm",
+        boom,
+    )
     update = planner_node(new_state("Original query?"))
     assert len(update["plan"]) == 1
     assert update["plan"][0].question == "Original query?"
     assert update["trace"][0].status == "error"
+    # Fallback path does not charge any additional cost.
+    assert update.get("total_cost_usd", None) is None
 
 
-def test_planner_falls_back_on_garbage_output(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_planner_falls_back_on_invalid_drafts(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Empty question violates SubQuestion.min_length=3 → PlannerError → fallback.
     monkeypatch.setattr(
-        "research_assistant.agents.planner.invoke_llm",
-        _stub_llm("not json at all"),
+        "research_assistant.agents.planner.invoke_structured_llm",
+        _stub_structured_llm([{"question": "x"}]),
     )
     update = planner_node(new_state("Explain X"))
     assert len(update["plan"]) == 1
@@ -206,5 +245,5 @@ def test_reporter_node_writes_final_report() -> None:
         "sq_1": Draft(sub_question_id="sq_1", content="A [^1]", model="m"),
     }
     update = reporter_node(state)
-    assert update["final_report"].startswith("# Main research query")  # type: ignore[union-attr]
+    assert update["final_report"].startswith("# Main research query")
     assert update["trace"][0].status == "ok"
