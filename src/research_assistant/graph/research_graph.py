@@ -38,7 +38,7 @@ from research_assistant.agents.planner import planner_node
 from research_assistant.agents.reporter import reporter_node
 from research_assistant.agents.synthesizer import synthesizer_node
 from research_assistant.graph.state import Evidence, ResearchState, StepLog
-from research_assistant.tools.web_search import WebSearchError, web_search
+from research_assistant.tools.web_search import WebSearchError, web_search_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ def build_graph(
         Override used in tests. Must accept ``(query, *, max_results=int)``
         and return a ``list[SearchHit]``.
     """
-    fn: SearchFn = search_fn if search_fn is not None else web_search
+    fn: SearchFn = search_fn if search_fn is not None else web_search_with_fallback
     retriever_node = _retriever_node_factory(fn)
 
     builder = StateGraph(ResearchState)
