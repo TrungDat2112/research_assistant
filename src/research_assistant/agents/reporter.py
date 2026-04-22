@@ -27,6 +27,7 @@ from research_assistant.graph.state import (
     StepLog,
     SubQuestion,
 )
+from research_assistant.observability import observe, update_span
 from research_assistant.prompts.loader import render
 
 logger = logging.getLogger(__name__)
@@ -70,11 +71,15 @@ def build_report(
     evidence: dict[str, list[Evidence]],
     total_cost_usd: float,
     generated_at: datetime | None = None,
+    trace_url: str | None = None,
 ) -> str:
     """Pure-function variant — used by tests and the graph node alike.
 
     Produces a Markdown string. Safe to call with a partial ``drafts`` dict
     (sub-questions with no draft are rendered as a "no answer" placeholder).
+
+    When ``trace_url`` is provided (Langfuse enabled), the reporter footer
+    includes a link back to the full trace for quick debugging.
     """
     generated_at = generated_at or datetime.now(tz=UTC)
 
@@ -100,9 +105,11 @@ def build_report(
         evidence=evidence,
         generated_at_iso=generated_at.isoformat(timespec="seconds"),
         total_cost_usd=total_cost_usd,
+        trace_url=trace_url,
     )
 
 
+@observe(name="reporter", as_type="span", capture_input=False, capture_output=False)
 def reporter_node(state: ResearchState) -> dict[str, Any]:
     """LangGraph terminal node — writes ``final_report`` into state."""
     started = time.perf_counter()
@@ -114,6 +121,7 @@ def reporter_node(state: ResearchState) -> dict[str, Any]:
             drafts=dict(state.get("drafts", {})),
             evidence=dict(state.get("evidence", {})),
             total_cost_usd=state.get("total_cost_usd", 0.0),
+            trace_url=state.get("trace_url"),
         )
     except Exception as exc:
         logger.exception("Reporter failed; emitting minimal fallback report.")
@@ -121,6 +129,18 @@ def reporter_node(state: ResearchState) -> dict[str, Any]:
         status: str = "error"
     else:
         status = "ok"
+
+    update_span(
+        input={
+            "n_plan": len(state.get("plan", [])),
+            "n_drafts": len(state.get("drafts", {})),
+        },
+        output={
+            "length_chars": len(report),
+            "status": status,
+        },
+        metadata={"total_cost_usd": round(state.get("total_cost_usd", 0.0), 6)},
+    )
 
     return {
         "final_report": report,

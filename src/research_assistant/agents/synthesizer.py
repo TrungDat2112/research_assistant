@@ -24,6 +24,7 @@ from research_assistant.graph.state import (
     StepLog,
     SubQuestion,
 )
+from research_assistant.observability import observe, update_span
 from research_assistant.prompts.loader import render
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,7 @@ def synthesize_one(
     )
 
 
+@observe(name="synthesizer", as_type="span", capture_input=False, capture_output=False)
 def synthesizer_node(state: ResearchState) -> dict[str, Any]:
     """LangGraph node: synthesize the sub-question at ``current_sub_question_index``.
 
@@ -187,6 +189,23 @@ def synthesizer_node(state: ResearchState) -> dict[str, Any]:
         }
 
     drafts_update[sub_q.id] = draft
+    update_span(
+        input={
+            "sub_question_id": sub_q.id,
+            "sub_question": sub_q.question,
+            "n_evidence": len(evidence_for_q),
+        },
+        output={
+            "draft_chars": len(draft.content),
+            "n_citations": len(draft.citations),
+        },
+        metadata={
+            "model": draft.model,
+            "cost_usd": round(draft.cost_usd, 6),
+            "tokens_in": draft.tokens_in,
+            "tokens_out": draft.tokens_out,
+        },
+    )
     return {
         "drafts": drafts_update,
         "current_sub_question_index": idx + 1,

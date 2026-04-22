@@ -25,6 +25,12 @@ from pydantic import BaseModel, Field, ValidationError
 from research_assistant.agents._llm import LLMCallResult, invoke_structured_llm
 from research_assistant.config import get_settings
 from research_assistant.graph.state import ResearchState, StepLog, SubQuestion
+from research_assistant.observability import (
+    current_trace_id,
+    current_trace_url,
+    observe,
+    update_span,
+)
 from research_assistant.prompts.loader import render
 
 logger = logging.getLogger(__name__)
@@ -134,12 +140,17 @@ def _fallback_plan(query: str) -> list[SubQuestion]:
     ]
 
 
+@observe(name="planner", as_type="span", capture_input=False, capture_output=False)
 def planner_node(state: ResearchState) -> dict[str, Any]:
     """LangGraph node entry point.
 
     Returns a partial state update (``plan`` + ``trace`` + ``total_cost_usd``).
     Uses the reducer-friendly shape so append semantics work for ``plan``
     and ``trace`` (see ``ResearchState`` annotations).
+
+    First node to run, so it captures the Langfuse ``trace_id`` / URL and
+    threads them through the state for the reporter to link into the
+    final Markdown footer.
     """
     started = time.perf_counter()
     settings = get_settings()
@@ -194,4 +205,29 @@ def planner_node(state: ResearchState) -> dict[str, Any]:
     }
     if cost_delta:
         update["total_cost_usd"] = current_cost + cost_delta
+
+    # Trace id/url are captured at the ``run_research`` layer (outside
+    # the LangGraph runner) so they land in the initial state regardless
+    # of OTel context propagation. We only fill them here as a best-
+    # effort fallback in case some caller bypassed ``run_research``.
+    if not state.get("trace_id"):
+        trace_id = current_trace_id()
+        if trace_id:
+            update["trace_id"] = trace_id
+            trace_url = current_trace_url()
+            if trace_url:
+                update["trace_url"] = trace_url
+
+    update_span(
+        input={"query": query, "output_language": output_language},
+        output={
+            "n_sub_questions": len(plan),
+            "sub_questions": [sq.question for sq in plan],
+            "status": status,
+        },
+        metadata={
+            "model": model,
+            "cost_usd": cost_delta,
+        },
+    )
     return update

@@ -20,6 +20,14 @@ import streamlit as st
 from research_assistant.config import get_settings
 from research_assistant.graph.research_graph import build_graph
 from research_assistant.graph.state import ResearchState, new_state
+from research_assistant.observability import (
+    current_trace_url,
+    start_agent_span,
+    update_trace_io,
+)
+from research_assistant.observability import (
+    flush as lf_flush,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,25 +104,46 @@ if run_btn:
     events_seen: set[str] = set()
     final_state: ResearchState | None = None
 
+    # Manually open an agent-span so every node/tool/LLM observation
+    # nests under one Langfuse trace (we can't use @observe here because
+    # the stream() generator is consumed inside this handler).
     try:
-        for event in graph.stream(initial, stream_mode="values"):
-            state_snapshot = cast(ResearchState, event)
-            trace = state_snapshot.get("trace", [])
-            for step in trace:
-                marker = f"{step.node}|{step.started_at.isoformat()}"
-                if marker in events_seen:
-                    continue
-                events_seen.add(marker)
-                trace_container.markdown(
-                    f"- **{step.node}** `{step.status}` · "
-                    f"{step.duration_ms:.0f} ms · "
-                    f"{step.details}",
+        with start_agent_span(
+            "research_agent",
+            input={"query": query.strip(), "output_language": language},
+        ):
+            for event in graph.stream(initial, stream_mode="values"):
+                state_snapshot = cast(ResearchState, event)
+                trace = state_snapshot.get("trace", [])
+                for step in trace:
+                    marker = f"{step.node}|{step.started_at.isoformat()}"
+                    if marker in events_seen:
+                        continue
+                    events_seen.add(marker)
+                    trace_container.markdown(
+                        f"- **{step.node}** `{step.status}` · "
+                        f"{step.duration_ms:.0f} ms · "
+                        f"{step.details}",
+                    )
+                final_state = state_snapshot
+            if final_state is not None:
+                update_trace_io(
+                    input={"query": query.strip(), "output_language": language},
+                    output={
+                        "n_sub_questions": len(final_state.get("plan", [])),
+                        "total_cost_usd": round(final_state.get("total_cost_usd", 0.0), 6),
+                        "report_chars": len(final_state.get("final_report") or ""),
+                    },
                 )
-            final_state = state_snapshot
+                trace_url = current_trace_url()
+                if trace_url:
+                    final_state["trace_url"] = trace_url
     except Exception as exc:
         status_panel.update(label=f"Lỗi: {exc}", state="error")
         st.exception(exc)
         st.stop()
+    finally:
+        lf_flush()
 
     status_panel.update(label="Hoàn tất", state="complete")
 

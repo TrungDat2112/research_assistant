@@ -22,6 +22,7 @@ from tavily import TavilyClient
 
 from research_assistant.config import get_settings
 from research_assistant.graph.state import SearchHit
+from research_assistant.observability import observe, update_span
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ def _coerce_hit(raw: dict[str, Any]) -> SearchHit | None:
         return None
 
 
+@observe(name="web_search", as_type="tool", capture_input=False, capture_output=False)
 def web_search(
     query: str,
     *,
@@ -158,6 +160,15 @@ def web_search(
         len(hits),
         bounded,
     )
+    update_span(
+        input={
+            "query": query,
+            "max_results": bounded,
+            "search_depth": search_depth,
+            "time_range": time_range,
+        },
+        output={"n_hits": len(hits), "urls": [str(h.url) for h in hits[:10]]},
+    )
     return hits
 
 
@@ -172,6 +183,12 @@ def _simplify_query(query: str) -> str:
     return " ".join(simplified.split())
 
 
+@observe(
+    name="web_search_with_fallback",
+    as_type="tool",
+    capture_input=False,
+    capture_output=False,
+)
 def web_search_with_fallback(
     query: str,
     *,
@@ -200,6 +217,7 @@ def web_search_with_fallback(
     Injected ``client`` is reused across all stages so unit tests can
     assert the retry ladder precisely.
     """
+    stage_used = "basic"
     hits = web_search(
         query,
         max_results=max_results,
@@ -209,33 +227,14 @@ def web_search_with_fallback(
         exclude_domains=exclude_domains,
         client=client,
     )
-    if hits:
-        return hits
-
-    logger.info(
-        "web_search_with_fallback: 0 hits on basic for %r — retrying with advanced depth",
-        query,
-    )
-    hits = web_search(
-        query,
-        max_results=max_results,
-        time_range=time_range,
-        search_depth="advanced",
-        include_domains=include_domains,
-        exclude_domains=exclude_domains,
-        client=client,
-    )
-    if hits:
-        return hits
-
-    simplified = _simplify_query(query)
-    if simplified and simplified != query:
+    if not hits:
         logger.info(
-            "web_search_with_fallback: 0 hits on advanced — retrying simplified %r",
-            simplified,
+            "web_search_with_fallback: 0 hits on basic for %r — retrying with advanced depth",
+            query,
         )
+        stage_used = "advanced"
         hits = web_search(
-            simplified,
+            query,
             max_results=max_results,
             time_range=time_range,
             search_depth="advanced",
@@ -244,4 +243,26 @@ def web_search_with_fallback(
             client=client,
         )
 
+    if not hits:
+        simplified = _simplify_query(query)
+        if simplified and simplified != query:
+            logger.info(
+                "web_search_with_fallback: 0 hits on advanced — retrying simplified %r",
+                simplified,
+            )
+            stage_used = "advanced_simplified"
+            hits = web_search(
+                simplified,
+                max_results=max_results,
+                time_range=time_range,
+                search_depth="advanced",
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+                client=client,
+            )
+
+    update_span(
+        input={"query": query, "max_results": max_results, "time_range": time_range},
+        output={"n_hits": len(hits), "stage_used": stage_used},
+    )
     return hits

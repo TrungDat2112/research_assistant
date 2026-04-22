@@ -170,6 +170,10 @@ class ResearchState(TypedDict, total=False):
     trace: Annotated[list[StepLog], _extend_list]
     total_cost_usd: float
     per_query_cap_usd: float
+    # Langfuse trace identifiers — populated by the first decorated node
+    # once a trace is active. ``None`` when Langfuse is disabled.
+    trace_id: str | None
+    trace_url: str | None
 
 
 def new_state(
@@ -193,4 +197,6 @@ def new_state(
         trace=[],
         total_cost_usd=0.0,
         per_query_cap_usd=per_query_cap_usd,
+        trace_id=None,
+        trace_url=None,
     )

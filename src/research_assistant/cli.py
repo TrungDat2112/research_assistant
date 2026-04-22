@@ -15,14 +15,14 @@ Designed to be non-interactive so it can drive smoke-test scripts.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import sys
 from pathlib import Path
 from typing import Literal, cast
 
 from research_assistant.config import get_settings
-from research_assistant.graph.research_graph import build_graph
-from research_assistant.graph.state import new_state
+from research_assistant.graph.research_graph import run_research
 
 logger = logging.getLogger("research_assistant.cli")
 
@@ -84,28 +84,38 @@ def run(argv: list[str]) -> int:
     output_language = cast("Literal['vi', 'en']", args.language or settings.output_language)
     max_iters = args.max_iterations or settings.max_iterations
 
-    initial = new_state(
+    logger.info("Running graph for query=%r language=%s", args.query, output_language)
+    final_state = run_research(
         query=args.query,
         output_language=output_language,
         max_iterations=max_iters,
         per_query_cap_usd=settings.per_query_cap_usd,
     )
 
-    graph = build_graph()
-
-    logger.info("Running graph for query=%r language=%s", args.query, output_language)
-    final_state = graph.invoke(initial)
-
     report = final_state.get("final_report") or "(empty report)"
     cost = final_state.get("total_cost_usd", 0.0)
     logger.info(
-        "Done. cost=$%.4f trace_steps=%d plan_size=%d",
+        "Done. cost=$%.4f trace_steps=%d plan_size=%d trace_id=%s",
         cost,
         len(final_state.get("trace", [])),
         len(final_state.get("plan", [])),
+        final_state.get("trace_id") or "-",
     )
 
-    sys.stdout.write(report)
+    # On Windows the default stdout codec is often cp1252, which can't
+    # encode Unicode characters frequently produced by the Synthesizer
+    # (em-dashes, curly quotes, Vietnamese diacritics). Force UTF-8 with
+    # ``errors="replace"`` so the process never crashes on encoding.
+    _encoding = getattr(sys.stdout, "encoding", "") or ""
+    if _encoding.lower() not in {"utf-8", "utf8"}:
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if callable(reconfigure):
+            with contextlib.suppress(Exception):
+                reconfigure(encoding="utf-8", errors="replace")
+    try:
+        sys.stdout.write(report)
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(report.encode("utf-8", errors="replace"))
     if not report.endswith("\n"):
         sys.stdout.write("\n")
 

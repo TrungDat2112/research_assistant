@@ -162,6 +162,35 @@
 
 ---
 
+## ADR-012: Langfuse instrumentation — shim `observability.py` + `run_research()` là root span
+
+- **Ngày**: 2026-04-22
+- **Trạng thái**: Accepted
+- **Context**: ADR-009 chốt Langfuse Cloud làm observability layer, nhưng Part B tuần 1 mới chỉ `langfuse_enabled` flag; chưa có span cụ thể. Khi implement full `@observe` cần trả lời:
+  1. Làm sao để unit test / CI / run không có key KHÔNG emit auth warnings hay gọi API thật?
+  2. Làm sao `trace_id` consistent giữa các node LangGraph (vì LangGraph thread execution có thể phá OpenTelemetry context)?
+  3. Streamlit stream events — không decorate được hàm generator → cần context manager thay thế.
+  4. `pydantic-settings` load `.env` vào `Settings` nhưng KHÔNG đổ vào `os.environ` → Langfuse SDK `get_client()` đọc env vars → auth fail dù `Settings.langfuse_enabled` = True.
+- **Options cân nhắc**:
+  - (A) Dùng thẳng `langfuse.observe` khắp nơi + `dotenv.load_dotenv()` early. Nhanh nhưng phụ thuộc implicit env state, và decorator import sớm sẽ trigger auth warning trong test.
+  - (B) Viết module shim `observability.py` bọc toàn bộ API của Langfuse, lazy-import SDK, explicit instantiate `Langfuse(public_key=..., secret_key=..., host=...)` từ `Settings`. Thêm `run_research()` helper làm root span và inject `trace_id/url` vào `ResearchState`, `start_agent_span()` context manager cho Streamlit.
+  - (C) Bỏ qua tracing chi tiết, chỉ log StepLog.
+- **Quyết định**: **B**.
+- **Lý do**:
+  - Shim tách rõ disabled-path (transparent passthrough) khỏi enabled-path → `pytest` không còn 401 errors, không cần set env vars giả. `conftest.py` autouse clear Langfuse keys củng cố điều này.
+  - Explicit `Langfuse(...)` loại được race condition với `os.environ`; không cần `dotenv.load_dotenv()` ở `__main__` (repo-wide quy ước là pydantic-settings chịu trách nhiệm duy nhất về cấu hình).
+  - `run_research()` bọc toàn bộ graph thành **1 root agent span** → `trace_id` / `trace_url` bắt ngay tại entry, inject vào state, mọi node đọc cùng giá trị → link trace duy nhất xuất hiện trong report footer.
+  - `start_agent_span()` cho phép `ui/app.py` stream từng update mà vẫn gói trong 1 trace (đảm bảo observability parity CLI ↔ UI).
+- **Hệ quả**:
+  - Rest-of-code chỉ import từ `research_assistant.observability`, Langfuse version bump chỉ đụng shim.
+  - `@observe` của shim có cache per-function để chỉ khởi tạo Langfuse decorator một lần.
+  - `invoke_llm` / `invoke_structured_llm` capture `model` + `usage_details` + `cost_details` → dashboard đo được cost theo model/node.
+  - `reporter_v1.jinja` thêm footer conditional `{% if has_trace %}` link sang `cloud.langfuse.com/.../traces/<id>` — không render khi tracing tắt, đảm bảo smoke test không key vẫn clean.
+  - Verify run 2026-04-22: query "What is LangGraph state persistence?" → cost $0.0224, `trace_id=995f6a8874ce7bcf7735711c23e0966a`, footer render đúng, `auth_check()` = True.
+  - Bắt buộc gọi `flush()` cuối `run_research` (và cuối UI handler) vì Langfuse Python SDK buffer span; process CLI exit nhanh có thể drop batch cuối nếu không flush.
+
+---
+
 <!-- Template cho entry mới:
 
 ## ADR-NNN: <Tiêu đề ngắn>

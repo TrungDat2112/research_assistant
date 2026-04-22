@@ -20,8 +20,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from research_assistant.config import get_settings
-from research_assistant.graph.research_graph import build_graph
-from research_assistant.graph.state import new_state
+from research_assistant.graph.research_graph import run_research
 
 QUERIES: list[tuple[str, Literal["vi", "en"]]] = [
     ("So sánh LoRA và QLoRA cho fine-tuning LLM năm 2026", "vi"),
@@ -61,7 +60,6 @@ def main() -> int:
 
     _OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    graph = build_graph()
     all_reports: list[str] = []
     metrics: list[dict[str, Any]] = []
     total_cost = 0.0
@@ -70,15 +68,14 @@ def main() -> int:
     for idx, (query, lang) in enumerate(QUERIES, start=1):
         logger.info("[%d/%d] Running: %r (lang=%s)", idx, len(QUERIES), query, lang)
         start = time.perf_counter()
-        initial = new_state(
-            query=query,
-            output_language=lang,
-            max_iterations=settings.max_iterations,
-            per_query_cap_usd=settings.per_query_cap_usd,
-        )
 
         try:
-            final: Any = graph.invoke(initial)
+            final: Any = run_research(
+                query=query,
+                output_language=lang,
+                max_iterations=settings.max_iterations,
+                per_query_cap_usd=settings.per_query_cap_usd,
+            )
         except Exception:
             logger.exception("Query %d failed; recording and continuing.", idx)
             metrics.append(
@@ -117,6 +114,8 @@ def main() -> int:
                 "evidence_counts": evidence_counts,
                 "total_citations": total_citations,
                 "trace_steps": len(final.get("trace", [])),
+                "langfuse_trace_id": final.get("trace_id"),
+                "langfuse_trace_url": final.get("trace_url"),
             },
         )
 

@@ -62,12 +62,19 @@ The original question was decomposed into {{ plan|length }} sub-questions:
 {% endfor -%}
 {% endfor %}
 
+{% set has_trace = (trace_url is defined) and trace_url -%}
 {% if is_vi -%}
 ---
 *Báo cáo này được sinh tự động; các trích dẫn `[^N]` tương ứng với thứ tự
 tài liệu ở mục Tài liệu tham khảo.*
+{% if has_trace %}
+*Trace đầy đủ trên Langfuse*: [{{ trace_url }}]({{ trace_url }})
+{% endif -%}
 {%- else -%}
 ---
 *This report was generated automatically; citation markers `[^N]` map to
 the References list above in order.*
+{% if has_trace %}
+*Full trace on Langfuse*: [{{ trace_url }}]({{ trace_url }})
+{% endif -%}
 {%- endif %}

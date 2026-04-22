@@ -21,6 +21,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from pydantic import BaseModel
 
 from research_assistant.config import get_settings
+from research_assistant.observability import observe, update_generation
 
 _SchemaT = TypeVar("_SchemaT", bound=BaseModel)
 
@@ -153,6 +154,7 @@ def _normalise_text(content: Any) -> str:
     return str(content)
 
 
+@observe(name="anthropic.invoke", as_type="generation", capture_input=False, capture_output=False)
 def invoke_llm(
     model: str,
     prompt: str,
@@ -167,6 +169,11 @@ def invoke_llm(
 
     Enforces the per-query budget cap **before** the call (see
     :func:`_preflight_budget_check`), per ADR-011.
+
+    Emits a Langfuse ``generation`` span with model + usage + cost so
+    Langfuse native charts pick it up. Prompt text is attached manually
+    instead of via ``capture_input=True`` to keep secrets/system prompts
+    out of default captures if callers pre-redact them.
     """
     _preflight_budget_check(
         model,
@@ -186,8 +193,17 @@ def invoke_llm(
     tokens_in, tokens_out = _extract_usage(response)
     cost = estimate_cost_usd(model, tokens_in, tokens_out)
 
+    text = _normalise_text(response.content)
+    update_generation(
+        model=model,
+        input={"system": system, "prompt": prompt},
+        output=text,
+        usage_details={"input": tokens_in, "output": tokens_out},
+        cost_details={"input": cost, "total": cost},
+    )
+
     return LLMCallResult(
-        text=_normalise_text(response.content),
+        text=text,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         cost_usd=cost,
@@ -195,6 +211,12 @@ def invoke_llm(
     )
 
 
+@observe(
+    name="anthropic.invoke_structured",
+    as_type="generation",
+    capture_input=False,
+    capture_output=False,
+)
 def invoke_structured_llm(
     model: str,
     prompt: str,
@@ -248,8 +270,18 @@ def invoke_structured_llm(
         tokens_in = tokens_out = 0
     cost = estimate_cost_usd(model, tokens_in, tokens_out)
 
+    text = _normalise_text(raw.content) if isinstance(raw, BaseMessage) else ""
+    parsed_payload: Any = parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
+    update_generation(
+        model=model,
+        input={"system": system, "prompt": prompt, "schema": schema.__name__},
+        output=parsed_payload,
+        usage_details={"input": tokens_in, "output": tokens_out},
+        cost_details={"input": cost, "total": cost},
+    )
+
     return cast(_SchemaT, parsed), LLMCallResult(
-        text=_normalise_text(raw.content) if isinstance(raw, BaseMessage) else "",
+        text=text,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         cost_usd=cost,

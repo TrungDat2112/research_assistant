@@ -7,14 +7,17 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 1 hoàn tất + 2 fix chất lượng (planner structured output, retriever fallback ladder).`
-**Last updated**: 2026-04-21
+**Phase**: `Tuần 2 đang chạy — Langfuse full instrumentation done, sắp bước vào RAG pipeline.`
+**Last updated**: 2026-04-22
 **Last session summary**:
-- **Fix 1 — Planner structured output**: thay `invoke_llm` + regex/JSON-parse bằng `invoke_structured_llm` (mới) dùng `ChatAnthropic.with_structured_output(_PlanDraft, include_raw=True)`. Schema `_PlanDraft`/`_PlanItemDraft` dùng field description để hướng dẫn LLM; validation `min_length` vẫn giữ ở `SubQuestion` → fallback path tiếp tục hoạt động khi draft không đạt. Prompt `planner_v1.jinja` đơn giản hoá (bỏ "return JSON only" instructions — tool-use tự lo shape).
-- **Fix 2 — Retriever fallback ladder**: thêm `web_search_with_fallback(query)` chạy 3 tầng: (1) basic+year, (2) nếu 0 hits → advanced+year, (3) nếu vẫn 0 hits và query chứa token năm → strip năm + advanced. Retriever mặc định dùng hàm này; `web_search` cũ giữ nguyên cho callers muốn single-shot.
-- **Verify**: re-run query 1 (VI LoRA/QLoRA) → plan 5 sub-q (trước: fallback 1), cost $0.0333. Re-run query 4 (EN vector DB) → 6/6 sub-q đều có evidence (trước: 2 sub-q zero hits), 30 refs, cost $0.0389. Các câu "Insufficient evidence" còn lại là content-relevance issue chứ không phải retrieval failure.
-- **Test**: +5 cases (`test_web_search.py` stage ladder + `_simplify_query`), refactor planner tests sang stub `invoke_structured_llm`, graph test update path. `pytest -q` 36/36 ✓ trong 2.25s.
-- **Toolchain**: `ruff check` ✓ · `ruff format` ✓ · `mypy` strict ✓ (29 files) · `pytest` 36/36 ✓.
+- **Langfuse shim** (`src/research_assistant/observability.py`, mới): bọc toàn bộ Langfuse v4 API (`@observe`, `update_span`, `update_generation`, `update_trace_io`, `flush`, `start_agent_span`, `current_trace_id/url`). Khi `settings.langfuse_enabled` = False thì passthrough hoàn toàn → test/CI không emit auth warning. Khi enabled thì explicit `Langfuse(public_key=..., secret_key=..., host=...)` từ `Settings` (không dựa vào `os.environ` vì `pydantic-settings` không mirror `.env` vào env vars).
+- **Instrument**: `invoke_llm` / `invoke_structured_llm` thành `generation` span (model / input / output / usage / cost); `web_search` + `web_search_with_fallback` thành `tool` span; `planner_node`, `synthesizer_node`, `reporter_node`, `retriever_node` thành `span` / `retriever`; root wrapper `run_research()` (`agent` span) là entry mới cho CLI + smoke script, bắt `trace_id` + `trace_url` ngay tại đó và inject vào `ResearchState` → mọi node chia sẻ cùng `trace_id`, khắc phục context-drop khi LangGraph spawn threads.
+- **UI Streamlit**: dùng `start_agent_span("research_agent")` ôm vòng `graph.stream(...)` thay cho decorator (không decorate được generator). Flush cuối handler.
+- **Report footer**: `reporter_v1.jinja` thêm block `{% if has_trace %}` render link `cloud.langfuse.com/.../traces/<id>`; tắt gọn khi tracing disabled.
+- **Tests**: thêm `tests/conftest.py` autouse fixture clear Langfuse keys + cache → không còn 401 spam trong `pytest`. `tests/unit/test_observability.py` (+5 cases) cover disabled-passthrough / trace helpers / exception propagation / `@wraps` metadata. Tổng 42/42 pass trong 1.74s.
+- **Fixes phụ**: (a) `cli.py` force stdout UTF-8 (Windows cp1252 cũ từng crash trên em-dash/diacritics). (b) Settings sửa: credential check qua `get_secret_value()` không đụng env vars.
+- **Verify thực tế**: `uv run python -m research_assistant.cli "What is LangGraph state persistence?" --language en` → cost $0.0224 (dưới budget), `trace_id=995f6a8874ce7bcf7735711c23e0966a`, footer link Langfuse render đúng, `auth_check()` = True. Dashboard có root `research_agent` span lồng `planner/retriever/synthesizer/reporter` + `generation` / `tool` children.
+- **Toolchain**: `ruff check` ✓ · `ruff format` ✓ · `mypy` strict ✓ · `pytest` 42/42 ✓.
 
 ---
 
@@ -30,16 +33,17 @@ d:\research-assistant\
 │   ├── __init__.py               # __version__ = "0.1.0"
 │   ├── config.py                 # pydantic-settings Settings + get_settings()
 │   ├── cli.py                    # argparse entry: python -m research_assistant.cli "query"
+│   ├── observability.py          # Langfuse shim: @observe / update_span / start_agent_span / flush
 │   ├── agents/
-│   │   ├── _llm.py               # ChatAnthropic wrapper + cost estimator + BudgetExceededError
-│   │   ├── planner.py            # Sonnet 4.5 → JSON list[SubQuestion] + fallback
-│   │   ├── synthesizer.py        # Haiku 4.5 → Draft với [^N] citations
-│   │   └── reporter.py           # deterministic Jinja render + citation renumbering toàn cục
+│   │   ├── _llm.py               # ChatAnthropic wrapper + cost estimator + generation spans
+│   │   ├── planner.py            # Sonnet 4.5 structured output → SubQuestion[]; @observe span
+│   │   ├── synthesizer.py        # Haiku 4.5 → Draft với [^N] citations; @observe span
+│   │   └── reporter.py           # deterministic Jinja render + trace_url footer; @observe span
 │   ├── tools/
-│   │   └── web_search.py         # Tavily wrapper → list[SearchHit]
+│   │   └── web_search.py         # Tavily wrapper + fallback ladder; @observe tool span
 │   ├── graph/
-│   │   ├── state.py              # ResearchState TypedDict + reducers + 5 Pydantic models
-│   │   └── research_graph.py     # LangGraph: planner→retriever→synthesizer→tick→reporter
+│   │   ├── state.py              # ResearchState TypedDict + trace_id/url + 5 Pydantic models
+│   │   └── research_graph.py     # run_research() root agent span + LangGraph wiring
 │   ├── prompts/
 │   │   ├── loader.py             # Jinja2 Environment + render helper (StrictUndefined)
 │   │   ├── planner_v1.jinja
@@ -48,14 +52,17 @@ d:\research-assistant\
 │   ├── rag/__init__.py           # placeholder — Tuần 2+
 │   ├── safety/__init__.py        # placeholder — Tuần 5
 │   └── eval/__init__.py          # placeholder — Tuần 2+
-├── tests/unit/
-│   ├── test_smoke.py             # import + version check
-│   ├── test_config.py            # defaults, flags, validator
-│   ├── test_state.py             # 6 cases: Pydantic models + new_state
-│   ├── test_prompts.py           # 4 cases: template rendering + strict undefined
-│   ├── test_web_search.py        # 5 cases: stub client, clamp, empty, malformed, backend error
-│   ├── test_agents.py            # 10 cases: planner parse/fallback, synthesize citations, reporter renumber
-│   └── test_graph.py             # 2 cases: end-to-end mocked + max_iterations
+├── tests/
+│   ├── conftest.py               # autouse fixture clear Langfuse keys → tests hermetic
+│   └── unit/
+│       ├── test_smoke.py             # import + version check
+│       ├── test_config.py            # defaults, flags, validator
+│       ├── test_state.py             # 6 cases: Pydantic models + new_state
+│       ├── test_prompts.py           # 4 cases: template rendering + strict undefined
+│       ├── test_web_search.py        # stage ladder + _simplify_query
+│       ├── test_agents.py            # planner/synthesizer/reporter
+│       ├── test_graph.py             # end-to-end mocked + max_iterations
+│       └── test_observability.py     # 5 cases: disabled passthrough, @wraps, exceptions
 ├── ui/app.py                     # Streamlit: input → stream trace → render MD + metrics panel
 ├── scripts/week1_smoke.py        # 5-query smoke test runner
 ├── data/eval/
@@ -98,12 +105,12 @@ d:\research-assistant\
 ### Việc tiếp theo — Tuần 2 (session sau)
 1. [x] ~~**Fix**: Planner JSON invalid → structured output~~ (done 2026-04-21, session 4).
 2. [x] ~~**Improve**: Retriever 0-hits fallback ladder~~ (done 2026-04-21, session 4).
-3. [ ] **Instrument Langfuse**: decorator `@observe` cho từng node + `trace.update(input/output)`; link `trace_id` trong report footer.
+3. [x] ~~**Instrument Langfuse**: `@observe` shim, run_research root span, trace_url footer~~ (done 2026-04-22, session 5; ADR-012).
 4. [ ] **Bắt đầu RAG pipeline (PLAN.md §5)**: ingestion (arXiv + HTML), chunking, embedding bằng bge-m3, Chroma dev store.
 5. [ ] **Hybrid retrieval stage 1**: BM25 + dense → top-50 candidates.
 6. [ ] **Critic agent** (draft) — kiểm citation coverage, output schema kiểm query → quyết định loop thêm hay pass.
 7. [ ] Chuyển `cli.py` vào `[project.scripts]` để gọi `uv run research-assistant "query"` trực tiếp.
-8. [ ] Re-run full 5-query smoke để đo delta cost/quality sau 2 fix (dự kiến cost tăng ~20% do advanced depth retry, plan tăng trung bình 3 → 5 sub-q).
+8. [ ] Re-run full 5-query smoke để đo delta cost/quality sau 2 fix + instrumentation (expect `trace_id` / `trace_url` cho từng query trong `week1_metrics.json`).
 
 ### Notes / cảnh báo ghi nhớ
 - Haiku 4.5 pricing trong `agents/_llm.py._PRICING_USD_PER_MTOK` đang là ước lượng conservative (input $1 / output $5 per MTok). Cần kiểm lại tại `https://www.anthropic.com/pricing` khi có thời gian và cập nhật nếu lệch > 20%.
@@ -185,6 +192,24 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **Verify thực tế**: `verify_q1.md` (LoRA/QLoRA, VI) plan 5 sub-q · cost $0.0333 · 25 refs. `verify_q4.md` (vector DB, EN) plan 6 sub-q · cost $0.0389 · 30 refs (tất cả sub-q có evidence). Files đã xoá sau verify (không cần giữ như regression baseline — `data/eval/week1_outputs.md` vẫn là baseline chính).
 - **Blocker**: không. Còn observation: câu trả lời "Insufficient evidence" trong query 4 xuất phát từ Synthesizer không tìm được fact cụ thể trong snippet — cần Critic/RAG sâu hơn để khắc phục, sẽ vào Tuần 2.
 - **Next**: Langfuse `@observe` instrumentation + bắt đầu RAG ingestion.
+
+### 2026-04-22 — Session 5 (Tuần 2 — Langfuse full instrumentation)
+- **Shim design** (`src/research_assistant/observability.py`, +283 LoC): lazy-load `Langfuse(...)` client từ `Settings` (không dựa vào `os.environ` — `pydantic-settings` chỉ populate Settings object), cached singleton. `observe(name, as_type, capture_input, capture_output)` wrapper: nếu `is_enabled()` False thì passthrough transparent; nếu True thì cache decorated function per-call, import `langfuse.observe` lazily. `update_span`, `update_generation`, `update_trace_io`, `flush`, `current_trace_id`, `current_trace_url`, `start_agent_span` đều no-op khi disabled. Test confirm `@wraps` giữ nguyên `__name__` / docstring.
+- **Instrumentation pass**:
+  - `_llm.py`: `invoke_llm` + `invoke_structured_llm` → `as_type="generation"`, set `model`, `input` (prompt tail), `output` (text tail), `usage_details` (`input`/`output`/`total` tokens), `cost_details` (`input`/`output`/`total` USD).
+  - `tools/web_search.py`: `web_search` + `web_search_with_fallback` → `as_type="tool"`, set query / results_count / search_depth / stage ladder result.
+  - `graph/research_graph.py`: đổi chỗ `retriever_node` factory để decorator `@observe(as_type="retriever")` không bị reshadow; thêm `run_research(query, output_language, max_iterations, per_query_cap_usd)` làm root span `@observe(name="research_agent", as_type="agent")`. `run_research` capture `trace_id` + `trace_url` ngay tại entry, inject vào `initial` state (để consistent qua toàn graph vì LangGraph có thể phá OTel context giữa nodes), invoke graph, `update_trace_io` với summary, `flush()` trước khi return.
+  - Nodes `planner`/`synthesizer`/`reporter` được `@observe` span riêng; planner làm fallback capture `trace_id/url` nếu run ngoài `run_research`.
+  - `graph/state.py`: thêm `trace_id: str | None` + `trace_url: str | None` vào `ResearchState` + `new_state()`.
+  - `prompts/reporter_v1.jinja`: footer `{% set has_trace = (trace_url is defined) and trace_url %}{% if has_trace %}*Full trace on Langfuse*: [URL]{% endif %}`. `agents/reporter.py.build_report` thêm tham số `trace_url`.
+  - `cli.py`, `scripts/week1_smoke.py`: migrate sang `run_research(...)` thay vì gọi `build_graph() + invoke`. `cli.py` force stdout UTF-8 trên Windows (tránh `UnicodeEncodeError` trên em-dash / diacritics).
+  - `ui/app.py`: `graph.stream(...)` ôm trong `start_agent_span("research_agent")` context; sau stream set `final_state["trace_url"] = current_trace_url()`; `flush()` cuối handler.
+- **Test hermeticity**: thêm `tests/conftest.py` autouse fixture (`monkeypatch` set `LANGFUSE_PUBLIC_KEY=""`/`LANGFUSE_SECRET_KEY=""` + `get_settings.cache_clear()`) → loại hoàn toàn 401 spam. Thêm `tests/unit/test_observability.py` (5 cases).
+- **Fix `_client()` init**: bug phát hiện khi verify — `langfuse.get_client()` đọc env vars nên thấy empty dù `Settings.langfuse_enabled` True. Sửa: instantiate explicit `Langfuse(public_key=s.langfuse_public_key.get_secret_value(), secret_key=..., host=...)`, cache singleton, gọi `_client()` ngay đầu mỗi observed wrapper để SDK `@observe` sau đó tìm thấy client toàn cục.
+- **Verify run**: `uv run python -m research_assistant.cli "What is LangGraph state persistence?" --language en --out data/eval/verify_langfuse3.md` → cost $0.0224 · trace_steps 12 · plan 5 sub-q · `trace_id=995f6a8874ce7bcf7735711c23e0966a`. Report footer có link Langfuse. `auth_check()` trả `True` sau khi instantiate qua shim. Dashboard kiểm tra: root `research_agent` → lồng `planner`, `retriever`×N, `synthesizer`, `reporter` + `generation` (`invoke_structured_llm` / `invoke_llm`) + `tool` (`web_search_with_fallback`).
+- **Toolchain final**: `ruff check` ✓ · `ruff format` ✓ · `mypy` strict ✓ · `pytest` 42/42 ✓ trong 1.74s.
+- **Blocker**: không.
+- **Next**: khởi động RAG pipeline (PLAN.md §5) — ingestion arXiv/HTML → chunking → bge-m3 embedding → Chroma dev store, rồi hybrid BM25 + dense stage 1.
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)
