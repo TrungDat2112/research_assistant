@@ -191,6 +191,40 @@
 
 ---
 
+## ADR-013: RAG ingestion stack — Chroma dev, bge-small-en-v1.5 dev, trafilatura-only, abstract-as-prepend
+
+- **Ngày**: 2026-04-22
+- **Trạng thái**: Accepted
+- **Context**: Bắt đầu RAG pipeline (PLAN §5.1). Trước khi code cần chốt 4 chi tiết không hiển nhiên từ PLAN:
+  1. **Vector store dev**: PLAN §3 đã nói "Qdrant prod, Chroma dev" nhưng chưa chốt client mode (Chroma Cloud / HTTP server / PersistentClient local / in-memory). Dev phải chạy được offline, không Docker.
+  2. **Embedding model**: PLAN ghi `BAAI/bge-m3` (~2.3 GB, multilingual). Dev corpus Tuần 2 toàn paper/blog tiếng Anh (ADR-010); tải 2.3 GB + embed 5 phút/run vs. bge-small-en-v1.5 (130 MB, embed nhanh 3× trên CPU) → chênh lệch thời gian lặp rất lớn khi iterate chunking/retrieval logic.
+  3. **Web/HTML scraping**: PLAN §3 cho `trafilatura` + `playwright` (JS fallback). Playwright cần cài chromium (~200 MB) + chạy browser headless → setup nặng. Corpus Tuần 2 toàn blog static (Anthropic/OpenAI/LangChain/HF), trafilatura đủ dùng.
+  4. **Contextual prepend** (ADR-003 nói "1-2 câu tóm tắt doc"): dùng LLM summary (đắt, ~$0.001/doc) hay dùng abstract có sẵn (free, deterministic)? arXiv có abstract; blog có `meta[name="description"]` nhờ trafilatura.
+- **Options cân nhắc**:
+  - **Vector store**: (A) Chroma PersistentClient local (file-backed sqlite + HNSW bin). (B) Chroma HTTP server (cần chạy daemon). (C) In-memory (mất state mỗi restart → không fit dev loop).
+  - **Embedding**: (A) bge-m3 luôn. (B) bge-small-en-v1.5 dev + bge-m3 prod, swap bằng settings. (C) Voyage / OpenAI embedding API (tốn budget ADR-011).
+  - **HTML**: (A) trafilatura only. (B) trafilatura + playwright fallback ngay v1.
+  - **Prepend**: (A) abstract + first 2 sentences fallback + title fallback. (B) LLM-generated summary 1 lần/doc, cache.
+- **Quyết định**:
+  - Vector store: **Chroma PersistentClient** tại `data/chroma/` (gitignored), collection `ai_ml_corpus_v1`. `hnsw:space="cosine"` khớp normalised embeddings.
+  - Embedding: **bge-small-en-v1.5** (384-dim) làm dev default qua `Settings.embedding_model`; tài liệu trong docstring + PROGRESS cảnh báo swap sang bge-m3 **TRƯỚC** khi thêm VI content hoặc chạy eval factuality sản phẩm. Swap = đổi `.env` + chạy `ingest_seed_corpus.py --rebuild` (dimension khác nhau, không tương thích cùng collection).
+  - HTML: **trafilatura only** ở v1 (fetch + extract + metadata). Playwright move sang backlog, trigger khi gặp blog/site JS-heavy trả empty extract.
+  - Prepend: **deterministic template** `"[Title] <abstract|first 2 sentences|title>"`, cap `max_chars=400`. Không gọi LLM.
+- **Lý do**:
+  - PersistentClient = zero ops, vẫn survive restart, sqlite + HNSW file đủ cho 10k–100k chunks; Qdrant swap dễ vì `ChromaStore` giấu API behind `upsert_chunks` / `search(SearchResult)` contract.
+  - bge-small EN 384-dim: 3.4 ch/s trên CPU (Windows laptop), 766 chunks = 3.7 phút; bge-m3 1024-dim ước ~1 ch/s + 2.3 GB download lần đầu = blocker iteration. Eval thực chất sẽ chạy trên corpus EN v1 (arXiv + blog EN), không cần multilingual. Khi thêm query/corpus tiếng Việt cho user-facing reports, swap bắt buộc.
+  - trafilatura extract OK 5/5 blog trong seed (Anthropic × 2, OpenAI, HF, LangChain) — không có failure; playwright thêm 200 MB và CI phức tạp không đáng lúc này.
+  - Abstract có sẵn từ arXiv / `meta description` blog + first-2-sentences fallback = đủ ngữ nghĩa cho chunk context (kiểm tra thực tế: top-1 hit cho query "contextual retrieval" là Anthropic blog dist 0.132, cho thấy prepend đúng nghĩa). LLM summary lại phát sinh variance giữa các lần ingest (model nondeterminism) → khó reproducibility.
+- **Hệ quả**:
+  - `Settings.embedding_model` + `Settings.embedding_device` là 2 knob chính để swap môi trường. Changelog khi đổi model phải kèm `--rebuild` ingest (auto qua `ChromaStore.reset()`).
+  - `ChromaStore` API giữ gọn 4 method: `upsert_chunks`, `search`, `reset`, `count`. Qdrant port sau này chỉ cần implement cùng signature.
+  - Các chunk từ PDF arXiv có artifact font (unicode garbage trong `ReAct` Figure 1 hiện thấy) → observation trong PROGRESS; nếu ảnh hưởng retrieval thật sự thì thêm filter theo non-printable-char ratio trước embed.
+  - `configs/seed_corpus.yaml` là entry point mở rộng corpus — thêm doc chỉ cần sửa YAML + `--rebuild`, không đụng code.
+  - `scripts/ingest_seed_corpus.py` ghi `data/eval/ingest_manifest.json` (commit được — summary minh bạch, không leak data); `data/chroma/*` + `data/raw/*` gitignored.
+  - Per-query test budget không đụng đến (ADR-011) vì RAG ingestion zero-LLM-call; embedding là local inference free.
+
+---
+
 <!-- Template cho entry mới:
 
 ## ADR-NNN: <Tiêu đề ngắn>

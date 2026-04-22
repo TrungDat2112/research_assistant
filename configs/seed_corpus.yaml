@@ -1,0 +1,34 @@
+# Seed corpus for Week 2 RAG ingestion (ADR-010, ADR-013).
+#
+# Size: ~15 docs to verify pipeline end-to-end. Expand to 50-100 once the
+# retrieval metrics loop is in place (PROGRESS task #5).
+#
+# Language: English only for now — dev embedding model is bge-small-en-v1.5
+# (ADR-013). Swap to bge-m3 before adding VI content.
+
+arxiv:
+  # Explicit, widely-cited AI/ML papers (reproducibility > convenience).
+  ids:
+    - "2005.11401"   # Lewis et al. — RAG for Knowledge-Intensive NLP
+    - "2310.11511"   # Asai et al. — Self-RAG
+    - "2312.10997"   # Gao et al. — Retrieval-Augmented Generation for Large Language Models: A Survey
+    - "2106.09685"   # Hu et al. — LoRA: Low-Rank Adaptation
+    - "2305.14314"   # Dettmers et al. — QLoRA: Efficient Finetuning of Quantized LLMs
+    - "2210.03629"   # Yao et al. — ReAct
+    - "2303.17651"   # Madaan et al. — Self-Refine
+    - "2307.09288"   # Touvron et al. — Llama 2
+    - "2501.12948"   # DeepSeek-R1 (reasoning-tuned MoE)
+    - "2404.16130"   # Yuan et al. — Self-Play Fine-Tuning (SPIN)
+
+html:
+  # Reputable AI/ML blog posts with stable URLs.
+  - url: "https://www.anthropic.com/news/contextual-retrieval"
+    title: "Anthropic — Introducing Contextual Retrieval"
+  - url: "https://www.anthropic.com/engineering/building-effective-agents"
+    title: "Anthropic — Building Effective AI Agents"
+  - url: "https://openai.com/index/introducing-structured-outputs-in-the-api/"
+    title: "OpenAI — Introducing Structured Outputs in the API"
+  - url: "https://huggingface.co/blog/ray-rag"
+    title: "Hugging Face — Retrieval-Augmented Generation with Ray"
+  - url: "https://blog.langchain.com/langgraph/"
+    title: "LangChain — Introducing LangGraph"

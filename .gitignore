@@ -78,6 +78,8 @@ data/eval/*.jsonl
 # ==== Qdrant / local vector stores ====
 qdrant_storage/
 chroma_db/
+data/chroma/*
+!data/chroma/.gitkeep
 *.sqlite3
 *.db
 

@@ -75,6 +75,43 @@ class Settings(BaseSettings):
     output_language: Literal["vi", "en"] = Field(default="vi")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO")
 
+    # ---- RAG (ADR-013) --------------------------------------------------
+    # Dev-only default: English-small bge for fast iteration. Swap to
+    # ``BAAI/bge-m3`` (~2.3 GB, multilingual) before running VI eval or
+    # production indexing — see ADR-013 for the trade-off.
+    embedding_model: str = Field(
+        default="BAAI/bge-small-en-v1.5",
+        description="Sentence-transformers model id for dense embeddings.",
+    )
+    embedding_device: Literal["cpu", "cuda", "mps"] = Field(
+        default="cpu",
+        description="Torch device for local embedding inference.",
+    )
+    chroma_persist_dir: Path = Field(
+        default_factory=lambda: _REPO_ROOT / "data" / "chroma",
+        description="Directory for Chroma PersistentClient (dev store).",
+    )
+    corpus_collection: str = Field(
+        default="ai_ml_corpus_v1",
+        description="Name of the primary Chroma collection for the seed corpus.",
+    )
+    chunk_size_tokens: int = Field(
+        default=500,
+        ge=128,
+        le=2048,
+        description="Target chunk size in tokens (PLAN §5.1 / ADR-003).",
+    )
+    chunk_overlap_tokens: int = Field(
+        default=50,
+        ge=0,
+        le=512,
+        description="Sliding-window overlap between adjacent chunks.",
+    )
+    raw_docs_dir: Path = Field(
+        default_factory=lambda: _REPO_ROOT / "data" / "raw",
+        description="Directory for cached raw source documents (PDF / HTML).",
+    )
+
     # ---- Validators -----------------------------------------------------
     @field_validator("budget_alert_usd")
     @classmethod

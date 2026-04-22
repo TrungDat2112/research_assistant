@@ -1,0 +1,126 @@
+{
+  "config_path": "D:\\research-assistant\\configs\\seed_corpus.yaml",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_dim": 384,
+  "chunk_size_tokens": 500,
+  "chunk_overlap_tokens": 50,
+  "collection": "ai_ml_corpus_v1",
+  "chroma_persist_dir": "D:\\research-assistant\\data\\chroma",
+  "docs_fetched": 15,
+  "docs_failed": 0,
+  "chunks_indexed": 766,
+  "timings_sec": {
+    "fetch": 47.24,
+    "chunk": 22.32,
+    "embed": 224.33,
+    "upsert": 3.59
+  },
+  "sources": [
+    {
+      "source_id": "2005.11401v4",
+      "doc_type": "arxiv",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "url": "http://arxiv.org/abs/2005.11401v4",
+      "chars": 69095
+    },
+    {
+      "source_id": "2310.11511v1",
+      "doc_type": "arxiv",
+      "title": "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection",
+      "url": "http://arxiv.org/abs/2310.11511v1",
+      "chars": 105748
+    },
+    {
+      "source_id": "2312.10997v5",
+      "doc_type": "arxiv",
+      "title": "Retrieval-Augmented Generation for Large Language Models: A Survey",
+      "url": "http://arxiv.org/abs/2312.10997v5",
+      "chars": 109737
+    },
+    {
+      "source_id": "2106.09685v2",
+      "doc_type": "arxiv",
+      "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+      "url": "http://arxiv.org/abs/2106.09685v2",
+      "chars": 82718
+    },
+    {
+      "source_id": "2305.14314v1",
+      "doc_type": "arxiv",
+      "title": "QLoRA: Efficient Finetuning of Quantized LLMs",
+      "url": "http://arxiv.org/abs/2305.14314v1",
+      "chars": 87819
+    },
+    {
+      "source_id": "2210.03629v3",
+      "doc_type": "arxiv",
+      "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+      "url": "http://arxiv.org/abs/2210.03629v3",
+      "chars": 110286
+    },
+    {
+      "source_id": "2303.17651v2",
+      "doc_type": "arxiv",
+      "title": "Self-Refine: Iterative Refinement with Self-Feedback",
+      "url": "http://arxiv.org/abs/2303.17651v2",
+      "chars": 124629
+    },
+    {
+      "source_id": "2307.09288v2",
+      "doc_type": "arxiv",
+      "title": "Llama 2: Open Foundation and Fine-Tuned Chat Models",
+      "url": "http://arxiv.org/abs/2307.09288v2",
+      "chars": 263887
+    },
+    {
+      "source_id": "2501.12948v2",
+      "doc_type": "arxiv",
+      "title": "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning",
+      "url": "http://arxiv.org/abs/2501.12948v2",
+      "chars": 229507
+    },
+    {
+      "source_id": "2404.16130v2",
+      "doc_type": "arxiv",
+      "title": "From Local to Global: A Graph RAG Approach to Query-Focused Summarization",
+      "url": "http://arxiv.org/abs/2404.16130v2",
+      "chars": 89607
+    },
+    {
+      "source_id": "h_a9cde9583a70d78b",
+      "doc_type": "blog",
+      "title": "Introducing Contextual Retrieval",
+      "url": "https://www.anthropic.com/news/contextual-retrieval",
+      "chars": 11065
+    },
+    {
+      "source_id": "h_7d24e5faa28b319b",
+      "doc_type": "blog",
+      "title": "Building effective agents",
+      "url": "https://www.anthropic.com/engineering/building-effective-agents",
+      "chars": 12888
+    },
+    {
+      "source_id": "h_9606a2cdf1b1c87e",
+      "doc_type": "blog",
+      "title": "Introducing Structured Outputs in the API",
+      "url": "https://openai.com/index/introducing-structured-outputs-in-the-api/",
+      "chars": 11768
+    },
+    {
+      "source_id": "h_335ba6bcb0ab0a0f",
+      "doc_type": "blog",
+      "title": "Retrieval Augmented Generation with Huggingface Transformers and Ray",
+      "url": "https://huggingface.co/blog/ray-rag",
+      "chars": 7512
+    },
+    {
+      "source_id": "h_3b5b0e78c657a8b3",
+      "doc_type": "blog",
+      "title": "LangGraph",
+      "url": "https://blog.langchain.com/langgraph/",
+      "chars": 11154
+    }
+  ],
+  "failures": []
+}

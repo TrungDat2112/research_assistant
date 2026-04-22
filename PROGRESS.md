@@ -7,17 +7,35 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 2 đang chạy — Langfuse full instrumentation done, sắp bước vào RAG pipeline.`
+**Phase**: `Tuần 2 đang chạy — RAG ingestion pipeline (arXiv + HTML → chunk → bge-small → Chroma) đã xong và verified. Sắp làm hybrid BM25 + dense retriever.`
 **Last updated**: 2026-04-22
 **Last session summary**:
-- **Langfuse shim** (`src/research_assistant/observability.py`, mới): bọc toàn bộ Langfuse v4 API (`@observe`, `update_span`, `update_generation`, `update_trace_io`, `flush`, `start_agent_span`, `current_trace_id/url`). Khi `settings.langfuse_enabled` = False thì passthrough hoàn toàn → test/CI không emit auth warning. Khi enabled thì explicit `Langfuse(public_key=..., secret_key=..., host=...)` từ `Settings` (không dựa vào `os.environ` vì `pydantic-settings` không mirror `.env` vào env vars).
-- **Instrument**: `invoke_llm` / `invoke_structured_llm` thành `generation` span (model / input / output / usage / cost); `web_search` + `web_search_with_fallback` thành `tool` span; `planner_node`, `synthesizer_node`, `reporter_node`, `retriever_node` thành `span` / `retriever`; root wrapper `run_research()` (`agent` span) là entry mới cho CLI + smoke script, bắt `trace_id` + `trace_url` ngay tại đó và inject vào `ResearchState` → mọi node chia sẻ cùng `trace_id`, khắc phục context-drop khi LangGraph spawn threads.
-- **UI Streamlit**: dùng `start_agent_span("research_agent")` ôm vòng `graph.stream(...)` thay cho decorator (không decorate được generator). Flush cuối handler.
-- **Report footer**: `reporter_v1.jinja` thêm block `{% if has_trace %}` render link `cloud.langfuse.com/.../traces/<id>`; tắt gọn khi tracing disabled.
-- **Tests**: thêm `tests/conftest.py` autouse fixture clear Langfuse keys + cache → không còn 401 spam trong `pytest`. `tests/unit/test_observability.py` (+5 cases) cover disabled-passthrough / trace helpers / exception propagation / `@wraps` metadata. Tổng 42/42 pass trong 1.74s.
-- **Fixes phụ**: (a) `cli.py` force stdout UTF-8 (Windows cp1252 cũ từng crash trên em-dash/diacritics). (b) Settings sửa: credential check qua `get_secret_value()` không đụng env vars.
-- **Verify thực tế**: `uv run python -m research_assistant.cli "What is LangGraph state persistence?" --language en` → cost $0.0224 (dưới budget), `trace_id=995f6a8874ce7bcf7735711c23e0966a`, footer link Langfuse render đúng, `auth_check()` = True. Dashboard có root `research_agent` span lồng `planner/retriever/synthesizer/reporter` + `generation` / `tool` children.
-- **Toolchain**: `ruff check` ✓ · `ruff format` ✓ · `mypy` strict ✓ · `pytest` 42/42 ✓.
+- **Deps mới** (`pyproject.toml`): `chromadb>=0.5.15`, `sentence-transformers>=3.0.0`, `trafilatura>=1.12.0`, `arxiv>=2.1.3`, `pymupdf>=1.24.0`, `pyyaml>=6.0.2`. `uv sync` → 176 packages resolved.
+- **Settings mới** (`config.py`): `embedding_model` (default `BAAI/bge-small-en-v1.5`, dev-only EN-only; swap `bge-m3` trước VI eval — ADR-013), `embedding_device`, `chroma_persist_dir` (`data/chroma/`), `corpus_collection` (`ai_ml_corpus_v1`), `chunk_size_tokens=500` / `chunk_overlap_tokens=50`, `raw_docs_dir`.
+- **RAG package** (`src/research_assistant/rag/`, +~720 LoC):
+  - `schemas.py` — `SourceDoc` / `Chunk` / `ChunkMetadata` Pydantic + `make_source_id` (SHA-1 tail cho HTML), `to_chroma()` flatten metadata sang scalar-only.
+  - `chunking.py` — token-aware slicer dùng HF fast tokenizer của embedding model (lru-cached). `_iter_sections` dò Markdown `#` + ALL-CAPS ngắn; `_summarise_for_prepend` lấy `doc.summary` > 2 câu đầu > title. Cắt theo offset → decode body; `text` = `[Title] summary\n\nbody` cho embedding. Empty / overlap≥size → error rõ.
+  - `embedding.py` — wrapper singleton `EmbeddingModel` qua `sentence-transformers`; prefix `"Represent this sentence for searching relevant passages: "` tự động cho BGE khi `embed_query`. Normalised cosine vectors.
+  - `vector_store.py` — `ChromaStore` dùng `PersistentClient(path=data/chroma)`, collection `get_or_create_collection(metadata={"hnsw:space": "cosine"})`. API: `upsert_chunks(chunks, embeddings)` idempotent, `search(query_vec, top_k, where=...)` trả `SearchResult(chunk_id, body, metadata, distance)`, `reset()` / `count()`.
+  - `ingest/arxiv_source.py` — `search_arxiv(query, date_from, categories)` + `fetch_arxiv_doc(id, cache_dir)` cache PDF dưới `data/raw/arxiv/`, extract text bằng pymupdf (cap 400k chars).
+  - `ingest/html_source.py` — `fetch_html_doc(url)` qua trafilatura (`extract_metadata` → title/author/date/summary, `extract` txt body, favor precision, include tables). Không playwright ở v1.
+  - `ingest/loader.py` — `SeedConfig.from_yaml(path)` + `load_seed_corpus(config)` dedup arXiv id giữa queries và explicit ids, trả `IngestResult(docs, failures)` — lỗi từng nguồn không crash toàn batch.
+- **Config corpus**: `configs/seed_corpus.yaml` — 10 arXiv papers (RAG, Self-RAG, RAG Survey, LoRA, QLoRA, ReAct, Self-Refine, Llama 2, DeepSeek-R1, GraphRAG) + 5 blog (Anthropic Contextual Retrieval, Anthropic Building Agents, OpenAI Structured Outputs, HF ray-rag, LangChain LangGraph).
+- **Ingest script** (`scripts/ingest_seed_corpus.py`, ~180 LoC): argparse `--config`/`--rebuild`/`--limit`/`--manifest`, fetch → chunk → embed → upsert, ghi `data/eval/ingest_manifest.json` với source list + timings.
+- **Run thực tế** (`uv run python scripts/ingest_seed_corpus.py --rebuild`):
+  - 15/15 docs fetched, 0 failures, 47.2s.
+  - 766 chunks, 22.3s chunking.
+  - 766 embeddings dim=384 (bge-small), 224.3s = 3.4 ch/s trên CPU, first-run kèm download ~130MB model.
+  - Upsert Chroma 3.6s → collection `ai_ml_corpus_v1` holds 766 chunks.
+  - Manifest ghi `data/eval/ingest_manifest.json`.
+- **Retrieval smoke** (3 query, top-3 mỗi query):
+  - "LoRA and trainable parameters" → top hits là LoRA + QLoRA papers (dist 0.256–0.259).
+  - "Contextual retrieval RAG" → top hit Anthropic blog "Introducing Contextual Retrieval" (dist 0.132).
+  - "ReAct reasoning loop" → toàn bộ top-3 từ paper ReAct (dist 0.177–0.193).
+- **Tests**: +4 test module (`test_rag_schemas`, `test_rag_chunking`, `test_rag_vector_store`, `test_rag_ingest`) = +26 cases. Chunking mock HF tokenizer bằng MagicMock side-effect (window = 4 chars/token); vector-store dùng Chroma thật trên `tmp_path`; ingest mock `search_arxiv`/`fetch_arxiv_doc`/`fetch_html_doc`. Tổng **68/68 pass** trong 23.5s.
+- **Toolchain**: `ruff check` ✓ · `ruff format` ✓ · `mypy strict` ✓ · `pytest 68/68` ✓.
+- **`.gitignore`**: thêm `data/chroma/*` (giữ `.gitkeep`) để sqlite/HNSW dev store không bị commit. PDF arXiv đã ignored sẵn qua `data/raw/*`.
+- **Decision mới**: ADR-013 (xem `DECISIONS.md`) — cố định Chroma PersistentClient dev, bge-small EN-only dev / bge-m3 prod, trafilatura không playwright cho v1, contextual prepend bằng abstract thay vì LLM summary.
 
 ---
 
@@ -49,26 +67,47 @@ d:\research-assistant\
 │   │   ├── planner_v1.jinja
 │   │   ├── synthesizer_v1.jinja
 │   │   └── reporter_v1.jinja
-│   ├── rag/__init__.py           # placeholder — Tuần 2+
+│   ├── rag/
+│   │   ├── __init__.py
+│   │   ├── schemas.py            # SourceDoc / Chunk / ChunkMetadata
+│   │   ├── chunking.py           # token-aware slicer + contextual prepend
+│   │   ├── embedding.py          # bge-small wrapper, singleton model loader
+│   │   ├── vector_store.py       # ChromaStore (PersistentClient dev)
+│   │   └── ingest/
+│   │       ├── __init__.py
+│   │       ├── arxiv_source.py   # arxiv SDK + pymupdf
+│   │       ├── html_source.py    # trafilatura
+│   │       └── loader.py         # SeedConfig.from_yaml + load_seed_corpus
 │   ├── safety/__init__.py        # placeholder — Tuần 5
 │   └── eval/__init__.py          # placeholder — Tuần 2+
 ├── tests/
-│   ├── conftest.py               # autouse fixture clear Langfuse keys → tests hermetic
+│   ├── conftest.py
 │   └── unit/
 │       ├── test_smoke.py             # import + version check
 │       ├── test_config.py            # defaults, flags, validator
-│       ├── test_state.py             # 6 cases: Pydantic models + new_state
-│       ├── test_prompts.py           # 4 cases: template rendering + strict undefined
-│       ├── test_web_search.py        # stage ladder + _simplify_query
-│       ├── test_agents.py            # planner/synthesizer/reporter
-│       ├── test_graph.py             # end-to-end mocked + max_iterations
-│       └── test_observability.py     # 5 cases: disabled passthrough, @wraps, exceptions
-├── ui/app.py                     # Streamlit: input → stream trace → render MD + metrics panel
-├── scripts/week1_smoke.py        # 5-query smoke test runner
-├── data/eval/
-│   ├── week1_outputs.md          # 5 báo cáo Markdown (53 KB)
-│   └── week1_metrics.json        # cost / wallclock / citations per query
-├── configs/                      # (empty) YAML configs sẽ vào đây Tuần 2+
+│       ├── test_state.py
+│       ├── test_prompts.py
+│       ├── test_web_search.py
+│       ├── test_agents.py
+│       ├── test_graph.py
+│       ├── test_observability.py
+│       ├── test_rag_schemas.py       # 6 cases
+│       ├── test_rag_chunking.py      # 8 cases (mocked tokenizer)
+│       ├── test_rag_vector_store.py  # 5 cases (real Chroma on tmp_path)
+│       └── test_rag_ingest.py        # 5 cases (mocked fetches)
+├── ui/app.py
+├── scripts/
+│   ├── week1_smoke.py
+│   └── ingest_seed_corpus.py     # fetch → chunk → embed → upsert + manifest
+├── data/
+│   ├── chroma/                   # (gitignored) Chroma PersistentClient store
+│   ├── raw/arxiv/                # (gitignored) cached arXiv PDFs
+│   └── eval/
+│       ├── week1_outputs.md
+│       ├── week1_metrics.json
+│       └── ingest_manifest.json  # 15 docs / 766 chunks / bge-small 384-dim
+├── configs/
+│   └── seed_corpus.yaml          # 10 arXiv + 5 blogs
 └── notebooks/                    # (empty)
 ```
 
@@ -106,16 +145,23 @@ d:\research-assistant\
 1. [x] ~~**Fix**: Planner JSON invalid → structured output~~ (done 2026-04-21, session 4).
 2. [x] ~~**Improve**: Retriever 0-hits fallback ladder~~ (done 2026-04-21, session 4).
 3. [x] ~~**Instrument Langfuse**: `@observe` shim, run_research root span, trace_url footer~~ (done 2026-04-22, session 5; ADR-012).
-4. [ ] **Bắt đầu RAG pipeline (PLAN.md §5)**: ingestion (arXiv + HTML), chunking, embedding bằng bge-m3, Chroma dev store.
-5. [ ] **Hybrid retrieval stage 1**: BM25 + dense → top-50 candidates.
-6. [ ] **Critic agent** (draft) — kiểm citation coverage, output schema kiểm query → quyết định loop thêm hay pass.
-7. [ ] Chuyển `cli.py` vào `[project.scripts]` để gọi `uv run research-assistant "query"` trực tiếp.
-8. [ ] Re-run full 5-query smoke để đo delta cost/quality sau 2 fix + instrumentation (expect `trace_id` / `trace_url` cho từng query trong `week1_metrics.json`).
+4. [x] ~~**RAG pipeline (PLAN.md §5 ingestion half)**: ingest arXiv + HTML → chunk 500/50 + contextual prepend → bge-small-en-v1.5 → Chroma persistent~~ (done 2026-04-22, session 6; ADR-013).
+5. [ ] **Hybrid retrieval stage 1**: BM25 index song song qua `rank_bm25` + combine với dense top-50 (weighted 0.5/0.5 baseline). Thêm `tools/vector_search.py` wrap `ChromaStore.search` theo contract `SearchHit` hiện hữu → expose cho graph retriever.
+6. [ ] **Integrate vector_search vào graph**: thêm nhánh retrieval trong `research_graph.py` để query corpus bên cạnh Tavily (hoặc ưu tiên corpus → fallback web).
+7. [ ] **Cross-encoder rerank** (bge-reranker-v2-m3) — stage 2 precision → top-5 feed Synthesizer. Thuộc Tuần 3 trong PLAN nhưng có thể làm sớm nếu còn thời lượng.
+8. [ ] **Retrieval eval set** 30 câu AI/ML (ADR-010) → đo Recall@10/@20, NDCG@10 baseline để có số gắn vào exit criteria Tuần 2.
+9. [ ] **Critic agent** (draft) — kiểm citation coverage, output schema kiểm query → quyết định loop thêm hay pass.
+10. [ ] **Swap sang bge-m3** + re-embed toàn corpus khi chuẩn bị thêm query VI hoặc corpus tiếng Việt (ADR-013 hệ quả).
+11. [ ] Chuyển `cli.py` vào `[project.scripts]` để gọi `uv run research-assistant "query"` trực tiếp.
+12. [ ] Re-run full 5-query smoke để đo delta cost/quality sau 2 fix + instrumentation + corpus (expect `trace_id` / `trace_url` + retrieval-hit stats).
 
 ### Notes / cảnh báo ghi nhớ
 - Haiku 4.5 pricing trong `agents/_llm.py._PRICING_USD_PER_MTOK` đang là ước lượng conservative (input $1 / output $5 per MTok). Cần kiểm lại tại `https://www.anthropic.com/pricing` khi có thời gian và cập nhật nếu lệch > 20%.
 - Console Windows mặc định cp1252; `scripts/week1_smoke.py` đã force UTF-8 cho stdout, nhưng nếu viết thêm CLI có tiếng Việt cần apply cùng pattern.
 - `.env.example` từng bị user paste nhầm key thật (ngày hôm nay); đã revert về placeholder. **Luôn** double-check trước khi commit.
+- pymupdf extract text một số paper có figure → ra unicode garbage (e.g. "ҼНҞБЈП" trong ReAct Figure 1). Chấp nhận cho dev; nếu precision@k bị kéo xuống thì thêm filter regex lọc chunk có > 20% non-printable trước embed.
+- Embedding CPU chạy 3.4 ch/s — với 766 chunks hết ~4 phút. Khi tăng corpus lên 50–100 docs (≈4-5 nghìn chunks) sẽ 20–25 phút. Nếu có GPU, đổi `EMBEDDING_DEVICE=cuda` trong `.env`.
+- Khi đổi `EMBEDDING_MODEL` trong `.env` **PHẢI** rebuild collection (`--rebuild`), vì dimension + distribution khác nhau giữa các model.
 
 ---
 
@@ -192,6 +238,37 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **Verify thực tế**: `verify_q1.md` (LoRA/QLoRA, VI) plan 5 sub-q · cost $0.0333 · 25 refs. `verify_q4.md` (vector DB, EN) plan 6 sub-q · cost $0.0389 · 30 refs (tất cả sub-q có evidence). Files đã xoá sau verify (không cần giữ như regression baseline — `data/eval/week1_outputs.md` vẫn là baseline chính).
 - **Blocker**: không. Còn observation: câu trả lời "Insufficient evidence" trong query 4 xuất phát từ Synthesizer không tìm được fact cụ thể trong snippet — cần Critic/RAG sâu hơn để khắc phục, sẽ vào Tuần 2.
 - **Next**: Langfuse `@observe` instrumentation + bắt đầu RAG ingestion.
+
+### 2026-04-22 — Session 6 (Tuần 2 — RAG ingestion pipeline)
+- **Scope chốt đầu session** (user confirm 3 lựa chọn): corpus nhỏ ~15 docs (10 arXiv + 5 blogs) để verify pipeline trước; embedding dev `BAAI/bge-small-en-v1.5` (~130 MB, EN-only) thay `bge-m3` để tiết kiệm thời gian download — sẽ swap trước khi thêm VI; wipe Chroma hiện có (file lock nên bỏ wipe, thay bằng `store.reset()` trong script).
+- **Deps** (`pyproject.toml`): `chromadb>=0.5.15`, `sentence-transformers>=3.0.0`, `trafilatura>=1.12.0`, `arxiv>=2.1.3`, `pymupdf>=1.24.0`, `pyyaml>=6.0.2`. mypy overrides cho `sentence_transformers.*`, `trafilatura.*`, `arxiv.*`, `pymupdf.*`, `yaml.*` (chromadb có stubs nên dùng `Any` thủ công).
+- **Config** (`config.py`): thêm `embedding_model`, `embedding_device`, `chroma_persist_dir`, `corpus_collection`, `chunk_size_tokens` (500), `chunk_overlap_tokens` (50), `raw_docs_dir`.
+- **Code** (~720 LoC src + ~320 LoC tests):
+  - `rag/schemas.py` — Pydantic `SourceDoc` / `Chunk` / `ChunkMetadata`; `SourceDoc.make_source_id(url)` = `h_<sha1[:16]>` cho HTML; `ChunkMetadata.to_chroma()` flatten scalars (Chroma không nhận nested).
+  - `rag/chunking.py` — `ChunkingConfig(model_id, 500, 50)`, tokenize bằng HF fast tokenizer của embedding model (lru_cache 4 models); slice token ids với step=size-overlap, decode body qua offset_mapping; `_iter_sections` dò `^#+ ` và ALL-CAPS ngắn; `_summarise_for_prepend` = `doc.summary` | 2 câu đầu | title, cap char. Embedding text = `"[Title] summary\n\nbody"`; body giữ nguyên cho citation. Raise nếu overlap≥size; skip empty docs (warn).
+  - `rag/embedding.py` — `EmbeddingModel(model_id, device, batch_size=32)`; `_load_model` lru_cache + Lock; `embed_documents` normalise cosine; `embed_query` tự prefix `"Represent this sentence for searching relevant passages: "` khi model chứa "bge" (bỏ qua reranker). Return `np.ndarray[float32]`.
+  - `rag/vector_store.py` — `ChromaStore(persist_dir, collection, distance="cosine")`; `get_or_create_collection(metadata={"hnsw:space": "cosine"})`; `upsert_chunks(chunks, embeddings)` idempotent với chunk_id; `search(query_vec, top_k, where)` → `list[SearchResult(chunk_id, body, metadata, distance)]`; `reset()` wrap `delete_collection` để `--rebuild`.
+  - `rag/ingest/arxiv_source.py` — `search_arxiv(query, max_results, date_from, categories)` build Tavily-style Lucene filter; `fetch_arxiv_doc(id, cache_dir)` cache PDF theo id, pymupdf extract tối đa 400k chars. `_iter_results` tách thành helper để test monkeypatch.
+  - `rag/ingest/html_source.py` — trafilatura `fetch_url` + `extract(txt, favor_precision, include_tables)`; `extract_metadata` → title/author/date/summary. Không playwright (cp PLAN §3 "playwright khi JS-heavy" → tuần sau nếu cần).
+  - `rag/ingest/loader.py` — `SeedConfig.from_yaml(path)` parse `arxiv.{ids,queries}` + `html[{url,title}|str]`, skip malformed entries với warning. `load_seed_corpus(config, arxiv_cache_dir)` dedup arXiv ids, collect failures per-source (không crash batch).
+- **`configs/seed_corpus.yaml`**: 10 arXiv paper (Lewis RAG, Self-RAG, RAG Survey, LoRA, QLoRA, ReAct, Self-Refine, Llama 2, DeepSeek-R1, GraphRAG) + 5 blog (Anthropic Contextual Retrieval / Building Effective Agents, OpenAI Structured Outputs, HF ray-rag, LangChain LangGraph).
+- **`scripts/ingest_seed_corpus.py`** (180 LoC): argparse `--config`, `--rebuild`, `--limit`, `--manifest`; tune `urllib3/httpx/chromadb.telemetry` về WARNING; manifest JSON với sources + timings + failures. Exit 2 nếu 0 chunks.
+- **Run thực tế** (`uv run python scripts/ingest_seed_corpus.py --rebuild`):
+  - Fetch: 15/15 docs, 47.2s (arXiv metadata delay_seconds=3.0 mỗi request = bottleneck chính).
+  - Chunk: 766 chunks, 22.3s (tokenizer load lần đầu tính trong đó).
+  - Embed: 384-dim vectors, 224.3s, 3.4 ch/s trên CPU (bge-small lần đầu tự download từ HF).
+  - Upsert Chroma: 3.6s, collection `ai_ml_corpus_v1` = 766 chunks.
+  - Manifest: `data/eval/ingest_manifest.json`.
+- **Retrieval smoke (3 query, top-3)**:
+  - "LoRA and trainable parameters" → LoRA + QLoRA papers, cosine-dist 0.256–0.259.
+  - "Contextual retrieval RAG" → Anthropic blog top-1 (dist 0.132), RAG Survey #2/#3.
+  - "ReAct reasoning loop" → cả top-3 từ paper ReAct (dist 0.177–0.193).
+- **Tests**: `test_rag_schemas` (6), `test_rag_chunking` (8, mock HF tokenizer), `test_rag_vector_store` (5, Chroma thật trên tmp_path), `test_rag_ingest` (5, mock fetches) → 26 cases mới. Tổng **68/68 pass** trong 23.5s.
+- **Toolchain**: `ruff check` ✓ · `ruff format` ✓ · `mypy strict` ✓ (phải thay relative imports → absolute, lift một số chromadb/pymupdf/sentence-transformers sang `Any` vì stubs hoặc lack thereof) · `pytest` 68/68 ✓.
+- **`.gitignore`**: thêm `data/chroma/*` (giữ `.gitkeep`) — chroma sqlite + HNSW bin không commit. PDF arXiv trong `data/raw/arxiv/` đã ignored qua `data/raw/*`. `ingest_manifest.json` giữ commit được (summary dùng để audit).
+- **Blocker**: không. Observation: pymupdf extract thỉnh thoảng đẻ unicode garbage cho chunk chứa figure/table PDF (ví dụ `ҼНҞБЈП` trong ReAct). Không blocking retrieval baseline nhưng có thể pollute synthesis snippets — ghi note trong PROGRESS, filter theo non-printable ratio nếu eval kéo xuống.
+- **ADR mới**: `DECISIONS.md` ADR-013 — Chroma PersistentClient dev / Qdrant prod; bge-small EN dev / bge-m3 prod; trafilatura không playwright v1; contextual prepend dùng abstract/first-2-sentences thay LLM summary (zero cost).
+- **Next**: BM25 index song song qua `rank_bm25` + hybrid retrieval stage 1 → wrap thành `tools/vector_search.py` emit `SearchHit` → integrate vào `research_graph.py` (ưu tiên corpus trước Tavily). Retrieval eval 30 câu. Xem § "Việc tiếp theo".
 
 ### 2026-04-22 — Session 5 (Tuần 2 — Langfuse full instrumentation)
 - **Shim design** (`src/research_assistant/observability.py`, +283 LoC): lazy-load `Langfuse(...)` client từ `Settings` (không dựa vào `os.environ` — `pydantic-settings` chỉ populate Settings object), cached singleton. `observe(name, as_type, capture_input, capture_output)` wrapper: nếu `is_enabled()` False thì passthrough transparent; nếu True thì cache decorated function per-call, import `langfuse.observe` lazily. `update_span`, `update_generation`, `update_trace_io`, `flush`, `current_trace_id`, `current_trace_url`, `start_agent_span` đều no-op khi disabled. Test confirm `@wraps` giữ nguyên `__name__` / docstring.

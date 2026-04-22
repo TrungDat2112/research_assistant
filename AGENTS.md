@@ -65,6 +65,7 @@ Xây **Research Assistant Agent** — AI agent tự động nghiên cứu một 
    - Cập nhật § "Việc tiếp theo".
 6. **Update `DECISIONS.md`** nếu có quyết định kỹ thuật mới (công nghệ, kiến trúc, trade-off).
 7. **Commit**: message theo conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
+   - **KHÔNG** nhắc tới milestone trong message: bỏ `Week N` / `Tuần N` / `Part A/B` / `Session N`. Chỉ mô tả thay đổi kỹ thuật (module, hành vi, lý do). Các cụm đó chỉ thuộc về `PROGRESS.md` / `DECISIONS.md`, không thuộc về git history.
 
 ---
 
