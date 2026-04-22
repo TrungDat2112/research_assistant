@@ -225,6 +225,26 @@
 
 ---
 
+## ADR-014: Stage-1 hybrid — `rank_bm25` in-process + 50/50 min-max per leg
+
+- **Ngày**: 2026-04-22
+- **Trạng thái**: Accepted
+- **Context**: PLAN.md §5.2 yêu cầu stage-1 candidate retrieval: BM25 + cosine embedding, trọng số 0.5/0.5 baseline, top ~50 trước re-rank. Cần cùng `SearchHit` contract như `web_search` để retriever / Synthesizer không phân nhánh theo provider.
+- **Options cân nhắc**:
+  - (A) Elasticsearch / OpenSearch — full-text tốt nhưng cần daemon hoặc cloud.
+  - (B) `rank_bm25` in-process, index rebuild từ cùng text đã lưu trong Chroma `documents`.
+  - (C) Chroma full-text nếu bật — phiên bản Chroma dev đang dùng không coi đây là ưu tiên v1.
+- **Quyết định**: **(B)** — thư viện `rank_bm25` (Okapi), corpus token từ `body` chunk; index build lần đầu khi gọi `vector_search` (cache theo `collection` + `count()`); trộn union top-50 dense + top-50 BM25 với min--max chuẩn hoá **trong từng chân** rồi cộng `(w_d·d + w_b·b)/(w_d+w_b)`; trọng số mặc định 0.5/0.5. Dense leg vẫn `ChromaStore.search` (ADR-013).
+- **Lý do**:
+  - Zero thêm dịch vụ ngoài sqlite Chroma; đủ cho seed ~hàng trăm–vài nghìn chunk trên dev laptop.
+  - Khớp ADR-002 (hybrid) và roadmap Elasticsearch v2 nếu scale.
+  - `tools/vector_search.py` tách rõ: graph chỉ gọi một tool trả `SearchHit` (`source="corpus"`), cùng mẫu Langfuse `@observe` như web search.
+- **Hệ quả**:
+  - Lần đầu sau ingest / `--rebuild` cần build lại index BM25 (O(n) tokenize) — chấp nhận; expose `clear_vector_search_cache()` cho test.
+  - Metadata filter (`filters` → Chroma `where`) chỉ áp dense leg; BM25 leg luôn trên toàn collection (tuần 2 tối thiểu; có thể post-filter trước khi tổng hợp sau nếu cần).
+
+---
+
 <!-- Template cho entry mới:
 
 ## ADR-NNN: <Tiêu đề ngắn>

@@ -146,6 +146,70 @@ class ChromaStore:
             )
         return results
 
+    def get_by_ids(
+        self,
+        chunk_ids: list[str],
+        *,
+        where: dict[str, Any] | None = None,
+    ) -> list[SearchResult]:
+        """Load documents by primary key (used to hydrate BM25-only candidates)."""
+        if not chunk_ids:
+            return []
+        raw: dict[str, Any] = self._collection.get(
+            ids=chunk_ids,
+            where=where,
+            include=["documents", "metadatas"],
+        )
+        out_ids: list[str] = list(raw.get("ids") or [])
+        docs: list[str] = list((raw.get("documents") or [""] * len(out_ids))[: len(out_ids)])
+        metas: list[dict[str, Any]] = list(
+            (raw.get("metadatas") or [{}] * len(out_ids))[: len(out_ids)],
+        )
+        return [
+            SearchResult(
+                chunk_id=cid,
+                body=doc or "",
+                metadata=dict(meta) if meta else {},
+                distance=0.0,
+            )
+            for cid, doc, meta in zip(out_ids, docs, metas, strict=True)
+        ]
+
+    def fetch_all_documents(
+        self,
+        *,
+        where: dict[str, Any] | None = None,
+        limit: int | None = None,
+    ) -> list[SearchResult]:
+        """Return every chunk (ids + body + metadata) for BM25 / introspection.
+
+        Chroma may paginate; for collections larger than a few hundred k docs,
+        pass ``limit``/iterate — the seed corpus is small so one call is fine.
+        """
+        raw: dict[str, Any] = self._collection.get(
+            where=where,
+            limit=limit,
+            include=["documents", "metadatas"],
+        )
+        out_ids: list[str] = list(raw.get("ids") or [])
+        if not out_ids:
+            return []
+        docs: list[str] = list(
+            (raw.get("documents") or [""] * len(out_ids))[: len(out_ids)],
+        )
+        metas: list[dict[str, Any]] = list(
+            (raw.get("metadatas") or [{}] * len(out_ids))[: len(out_ids)],
+        )
+        return [
+            SearchResult(
+                chunk_id=cid,
+                body=doc or "",
+                metadata=dict(meta) if meta else {},
+                distance=0.0,
+            )
+            for cid, doc, meta in zip(out_ids, docs, metas, strict=True)
+        ]
+
     # -- introspection ---------------------------------------------------
 
     def count(self) -> int:

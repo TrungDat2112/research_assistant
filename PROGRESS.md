@@ -7,7 +7,7 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 2 đang chạy — RAG ingestion pipeline (arXiv + HTML → chunk → bge-small → Chroma) đã xong và verified. Sắp làm hybrid BM25 + dense retriever.`
+**Phase**: `Tuần 2 đang chạy — RAG ingestion + hybrid stage-1 (BM25 + dense 50/50) + tool vector_search → SearchHit. Tiếp: wire corpus vào graph retriever.`
 **Last updated**: 2026-04-22
 **Last session summary**:
 - **Deps mới** (`pyproject.toml`): `chromadb>=0.5.15`, `sentence-transformers>=3.0.0`, `trafilatura>=1.12.0`, `arxiv>=2.1.3`, `pymupdf>=1.24.0`, `pyyaml>=6.0.2`. `uv sync` → 176 packages resolved.
@@ -58,7 +58,8 @@ d:\research-assistant\
 │   │   ├── synthesizer.py        # Haiku 4.5 → Draft với [^N] citations; @observe span
 │   │   └── reporter.py           # deterministic Jinja render + trace_url footer; @observe span
 │   ├── tools/
-│   │   └── web_search.py         # Tavily wrapper + fallback ladder; @observe tool span
+│   │   ├── web_search.py         # Tavily wrapper + fallback ladder; @observe tool span
+│   │   └── vector_search.py     # hybrid BM25 + dense → SearchHit; @observe
 │   ├── graph/
 │   │   ├── state.py              # ResearchState TypedDict + trace_id/url + 5 Pydantic models
 │   │   └── research_graph.py     # run_research() root agent span + LangGraph wiring
@@ -73,6 +74,8 @@ d:\research-assistant\
 │   │   ├── chunking.py           # token-aware slicer + contextual prepend
 │   │   ├── embedding.py          # bge-small wrapper, singleton model loader
 │   │   ├── vector_store.py       # ChromaStore (PersistentClient dev)
+│   │   ├── bm25_index.py         # rank_bm25 BM25CorpusIndex (parallel lexical leg)
+│   │   ├── hybrid.py             # stage-1 hybrid fusion 0.5/0.5, top-50+50
 │   │   └── ingest/
 │   │       ├── __init__.py
 │   │       ├── arxiv_source.py   # arxiv SDK + pymupdf
@@ -94,7 +97,9 @@ d:\research-assistant\
 │       ├── test_rag_schemas.py       # 6 cases
 │       ├── test_rag_chunking.py      # 8 cases (mocked tokenizer)
 │       ├── test_rag_vector_store.py  # 5 cases (real Chroma on tmp_path)
-│       └── test_rag_ingest.py        # 5 cases (mocked fetches)
+│       ├── test_rag_ingest.py        # 5 cases (mocked fetches)
+│       ├── test_hybrid_retrieval.py  # BM25 + hybrid fusion
+│       └── test_vector_search.py     # SearchHit corpus tool
 ├── ui/app.py
 ├── scripts/
 │   ├── week1_smoke.py
@@ -146,7 +151,7 @@ d:\research-assistant\
 2. [x] ~~**Improve**: Retriever 0-hits fallback ladder~~ (done 2026-04-21, session 4).
 3. [x] ~~**Instrument Langfuse**: `@observe` shim, run_research root span, trace_url footer~~ (done 2026-04-22, session 5; ADR-012).
 4. [x] ~~**RAG pipeline (PLAN.md §5 ingestion half)**: ingest arXiv + HTML → chunk 500/50 + contextual prepend → bge-small-en-v1.5 → Chroma persistent~~ (done 2026-04-22, session 6; ADR-013).
-5. [ ] **Hybrid retrieval stage 1**: BM25 index song song qua `rank_bm25` + combine với dense top-50 (weighted 0.5/0.5 baseline). Thêm `tools/vector_search.py` wrap `ChromaStore.search` theo contract `SearchHit` hiện hữu → expose cho graph retriever.
+5. [x] **Hybrid retrieval stage 1**: BM25 index song song qua `rank_bm25` + combine với dense top-50 (weighted 0.5/0.5 baseline). Thêm `tools/vector_search.py` wrap `ChromaStore.search` theo contract `SearchHit` hiện hữu → expose cho graph retriever.
 6. [ ] **Integrate vector_search vào graph**: thêm nhánh retrieval trong `research_graph.py` để query corpus bên cạnh Tavily (hoặc ưu tiên corpus → fallback web).
 7. [ ] **Cross-encoder rerank** (bge-reranker-v2-m3) — stage 2 precision → top-5 feed Synthesizer. Thuộc Tuần 3 trong PLAN nhưng có thể làm sớm nếu còn thời lượng.
 8. [ ] **Retrieval eval set** 30 câu AI/ML (ADR-010) → đo Recall@10/@20, NDCG@10 baseline để có số gắn vào exit criteria Tuần 2.
@@ -287,6 +292,15 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **Toolchain final**: `ruff check` ✓ · `ruff format` ✓ · `mypy` strict ✓ · `pytest` 42/42 ✓ trong 1.74s.
 - **Blocker**: không.
 - **Next**: khởi động RAG pipeline (PLAN.md §5) — ingestion arXiv/HTML → chunking → bge-m3 embedding → Chroma dev store, rồi hybrid BM25 + dense stage 1.
+
+### 2026-04-22 — Session 7 (Tuần 2 — Hybrid stage 1 + vector_search tool)
+- **Deps**: `rank-bm25>=0.2.2` (`pyproject.toml`); mypy override `rank_bm25.*`.
+- **`ChromaStore`**: `fetch_all_documents` / `get_by_ids` để BM25 đồng bộ toàn corpus và hydrate ứng viên chỉ có ở nhánh BM25.
+- **`rag/bm25_index.py`**: `BM25CorpusIndex` (Okapi, `tokenize_for_bm25`), build từ `from_chroma` hoặc test rows; placeholder token cho body rỗng.
+- **`rag/hybrid.py`**: `hybrid_search_stage1` — dense `top_k=50` + BM25 `top_n=50`, min-max từng chân, fuse `(w_d·d + w_b·b)/(w_d+w_b)` (mặc định 0.5/0.5), `final_top_k` hits; `HybridSearchResult`.
+- **`tools/vector_search.py`**: `vector_search(...)` → `list[SearchHit]` (`source="corpus"`), `TypeAdapter(HttpUrl)` cho URL; cache BM25 theo `(collection_name, count)`; `clear_vector_search_cache()` cho test; `@observe` tool + `update_span`.
+- **Tests**: `test_hybrid_retrieval.py` (6), `test_vector_search.py` (2). Tổng **75/75** `pytest`; `ruff` + `mypy` strict ✓.
+- **Next** (theo § Việc tiếp theo): **#6** — wire `vector_search` vào `research_graph.py` (corpus trước / kèm Tavily).
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)
