@@ -1,4 +1,4 @@
 """Two-stage RAG pipeline (ingest → hybrid retrieve → cross-encoder rerank).
 
-Implemented incrementally from Week 2 per PLAN.md §5.
+See :mod:`research_assistant.rag.reranker` for stage-2 and PLAN.md §5.2.
 """

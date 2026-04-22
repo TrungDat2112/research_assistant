@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "description": "30 AI/ML retrieval queries; relevant_source_ids match Chroma metadata source_id (see data/eval/ingest_manifest.json).",
+  "language": "en",
+  "items": [
+    {
+      "id": "q01",
+      "query": "What is retrieval-augmented generation for knowledge-intensive NLP tasks?",
+      "relevant_source_ids": ["2005.11401v4"]
+    },
+    {
+      "id": "q02",
+      "query": "How do dense passage retrievers combine with a seq2seq generator for open QA?",
+      "relevant_source_ids": ["2005.11401v4"]
+    },
+    {
+      "id": "q03",
+      "query": "What is Self-RAG and how does it critique its own generation?",
+      "relevant_source_ids": ["2310.11511v1"]
+    },
+    {
+      "id": "q04",
+      "query": "Learning to retrieve with self-reflection in large language models",
+      "relevant_source_ids": ["2310.11511v1"]
+    },
+    {
+      "id": "q05",
+      "query": "Give a survey of retrieval-augmented generation methods for large language models",
+      "relevant_source_ids": ["2312.10997v5"]
+    },
+    {
+      "id": "q06",
+      "query": "Taxonomy and overview of RAG for LLMs",
+      "relevant_source_ids": ["2312.10997v5"]
+    },
+    {
+      "id": "q07",
+      "query": "What is LoRA low-rank adaptation of large language models?",
+      "relevant_source_ids": ["2106.09685v2"]
+    },
+    {
+      "id": "q08",
+      "query": "How many trainable parameters does LoRA add compared to full fine-tuning?",
+      "relevant_source_ids": ["2106.09685v2"]
+    },
+    {
+      "id": "q09",
+      "query": "What is QLoRA and 4-bit quantization for efficient LLM fine-tuning?",
+      "relevant_source_ids": ["2305.14314v1"]
+    },
+    {
+      "id": "q10",
+      "query": "Fine-tuning LLMs on a single GPU with QLoRA",
+      "relevant_source_ids": ["2305.14314v1"]
+    },
+    {
+      "id": "q11",
+      "query": "ReAct: combining reasoning and acting in language models with tools",
+      "relevant_source_ids": ["2210.03629v3"]
+    },
+    {
+      "id": "q12",
+      "query": "Synergizing reasoning traces and action steps in LLM agents",
+      "relevant_source_ids": ["2210.03629v3"]
+    },
+    {
+      "id": "q13",
+      "query": "What is Self-Refine iterative refinement with self-feedback?",
+      "relevant_source_ids": ["2303.17651v2"]
+    },
+    {
+      "id": "q14",
+      "query": "Improving model outputs by refining drafts in multiple steps",
+      "relevant_source_ids": ["2303.17651v2"]
+    },
+    {
+      "id": "q15",
+      "query": "Llama 2 open foundation and fine-tuned chat models",
+      "relevant_source_ids": ["2307.09288v2"]
+    },
+    {
+      "id": "q16",
+      "query": "How was Llama 2 pre-trained and aligned with human feedback?",
+      "relevant_source_ids": ["2307.09288v2"]
+    },
+    {
+      "id": "q17",
+      "query": "DeepSeek-R1 reasoning capability via reinforcement learning",
+      "relevant_source_ids": ["2501.12948v2"]
+    },
+    {
+      "id": "q18",
+      "query": "Incentivizing chain-of-thought and reasoning in LLMs with RL",
+      "relevant_source_ids": ["2501.12948v2"]
+    },
+    {
+      "id": "q19",
+      "query": "Graph RAG query-focused summarization from local to global",
+      "relevant_source_ids": ["2404.16130v2"]
+    },
+    {
+      "id": "q20",
+      "query": "Entity graph and community summaries for RAG on private datasets",
+      "relevant_source_ids": ["2404.16130v2"]
+    },
+    {
+      "id": "q21",
+      "query": "Anthropic contextual retrieval reducing retrieval misses",
+      "relevant_source_ids": ["h_a9cde9583a70d78b"]
+    },
+    {
+      "id": "q22",
+      "query": "Improving RAG with contextual embeddings for each chunk",
+      "relevant_source_ids": ["h_a9cde9583a70d78b"]
+    },
+    {
+      "id": "q23",
+      "query": "How to build effective AI agents with planning and tool use",
+      "relevant_source_ids": ["h_7d24e5faa28b319b"]
+    },
+    {
+      "id": "q24",
+      "query": "Multi-agent systems and long-horizon tasks in production agents",
+      "relevant_source_ids": ["h_7d24e5faa28b319b"]
+    },
+    {
+      "id": "q25",
+      "query": "OpenAI structured outputs JSON schema mode in the API",
+      "relevant_source_ids": ["h_9606a2cdf1b1c87e"]
+    },
+    {
+      "id": "q26",
+      "query": "Guaranteeing function calling output matches a strict JSON schema",
+      "relevant_source_ids": ["h_9606a2cdf1b1c87e"]
+    },
+    {
+      "id": "q27",
+      "query": "Retrieval augmented generation with Ray and Hugging Face transformers",
+      "relevant_source_ids": ["h_335ba6bcb0ab0a0f"]
+    },
+    {
+      "id": "q28",
+      "query": "Scaling RAG data pipelines for embedding and search",
+      "relevant_source_ids": ["h_335ba6bcb0ab0a0f"]
+    },
+    {
+      "id": "q29",
+      "query": "What is LangGraph for building stateful multi-step LLM applications?",
+      "relevant_source_ids": ["h_3b5b0e78c657a8b3"]
+    },
+    {
+      "id": "q30",
+      "query": "Cyclic graph workflows and checkpointing in LangGraph",
+      "relevant_source_ids": ["h_3b5b0e78c657a8b3"]
+    }
+  ]
+}

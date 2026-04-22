@@ -7,7 +7,7 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 2 đang chạy — RAG ingestion + hybrid stage-1 (BM25 + dense 50/50) + tool vector_search → SearchHit. Tiếp: wire corpus vào graph retriever.`
+**Phase**: `Tuần 2 — RAG + graph + rerank; retrieval eval 30 câu (Recall@k/NDCG@10) + script. Tiếp: Critic / smoke / bge-m3.`
 **Last updated**: 2026-04-22
 **Last session summary**:
 - **Deps mới** (`pyproject.toml`): `chromadb>=0.5.15`, `sentence-transformers>=3.0.0`, `trafilatura>=1.12.0`, `arxiv>=2.1.3`, `pymupdf>=1.24.0`, `pyyaml>=6.0.2`. `uv sync` → 176 packages resolved.
@@ -62,7 +62,7 @@ d:\research-assistant\
 │   │   └── vector_search.py     # hybrid BM25 + dense → SearchHit; @observe
 │   ├── graph/
 │   │   ├── state.py              # ResearchState TypedDict + trace_id/url + 5 Pydantic models
-│   │   └── research_graph.py     # run_research() root agent span + LangGraph wiring
+│   │   └── research_graph.py     # pool → cross-encoder rerank → evidence; run_research root span
 │   ├── prompts/
 │   │   ├── loader.py             # Jinja2 Environment + render helper (StrictUndefined)
 │   │   ├── planner_v1.jinja
@@ -82,7 +82,7 @@ d:\research-assistant\
 │   │       ├── html_source.py    # trafilatura
 │   │       └── loader.py         # SeedConfig.from_yaml + load_seed_corpus
 │   ├── safety/__init__.py        # placeholder — Tuần 5
-│   └── eval/__init__.py          # placeholder — Tuần 2+
+│   └── eval/                     # metrics + run_hybrid_retrieval_eval; JSON qrels
 ├── tests/
 │   ├── conftest.py
 │   └── unit/
@@ -99,18 +99,22 @@ d:\research-assistant\
 │       ├── test_rag_vector_store.py  # 5 cases (real Chroma on tmp_path)
 │       ├── test_rag_ingest.py        # 5 cases (mocked fetches)
 │       ├── test_hybrid_retrieval.py  # BM25 + hybrid fusion
-│       └── test_vector_search.py     # SearchHit corpus tool
+│       ├── test_vector_search.py     # SearchHit corpus tool
+│       ├── test_retrieval_metrics.py # DCG/NDCG/recall
+│       └── test_retrieval_load.py    # JSON eval set
 ├── ui/app.py
 ├── scripts/
 │   ├── week1_smoke.py
-│   └── ingest_seed_corpus.py     # fetch → chunk → embed → upsert + manifest
+│   ├── ingest_seed_corpus.py     # fetch → chunk → embed → upsert + manifest
+│   └── run_retrieval_eval.py     # Recall@10/20, NDCG@10 on retrieval_eval_30.json
 ├── data/
 │   ├── chroma/                   # (gitignored) Chroma PersistentClient store
 │   ├── raw/arxiv/                # (gitignored) cached arXiv PDFs
 │   └── eval/
 │       ├── week1_outputs.md
 │       ├── week1_metrics.json
-│       └── ingest_manifest.json  # 15 docs / 766 chunks / bge-small 384-dim
+│       ├── ingest_manifest.json  # 15 docs / 766 chunks / bge-small 384-dim
+│       └── retrieval_eval_30.json  # 30 qrels (source_id)
 ├── configs/
 │   └── seed_corpus.yaml          # 10 arXiv + 5 blogs
 └── notebooks/                    # (empty)
@@ -152,9 +156,9 @@ d:\research-assistant\
 3. [x] ~~**Instrument Langfuse**: `@observe` shim, run_research root span, trace_url footer~~ (done 2026-04-22, session 5; ADR-012).
 4. [x] ~~**RAG pipeline (PLAN.md §5 ingestion half)**: ingest arXiv + HTML → chunk 500/50 + contextual prepend → bge-small-en-v1.5 → Chroma persistent~~ (done 2026-04-22, session 6; ADR-013).
 5. [x] **Hybrid retrieval stage 1**: BM25 index song song qua `rank_bm25` + combine với dense top-50 (weighted 0.5/0.5 baseline). Thêm `tools/vector_search.py` wrap `ChromaStore.search` theo contract `SearchHit` hiện hữu → expose cho graph retriever.
-6. [ ] **Integrate vector_search vào graph**: thêm nhánh retrieval trong `research_graph.py` để query corpus bên cạnh Tavily (hoặc ưu tiên corpus → fallback web).
-7. [ ] **Cross-encoder rerank** (bge-reranker-v2-m3) — stage 2 precision → top-5 feed Synthesizer. Thuộc Tuần 3 trong PLAN nhưng có thể làm sớm nếu còn thời lượng.
-8. [ ] **Retrieval eval set** 30 câu AI/ML (ADR-010) → đo Recall@10/@20, NDCG@10 baseline để có số gắn vào exit criteria Tuần 2.
+6. [x] **Integrate vector_search vào graph**: `research_graph.py` gọi `vector_search` trước, ghép với `web_search_with_fallback` theo URL-dedup; `build_graph` / `run_research` nhận `vector_search_fn` (test truyền `[]` để khỏi load embedder).
+7. [x] **Cross-encoder rerank** (`BAAI/bge-reranker-v2-m3`, `rag/reranker.py`) — pool `retrieval_candidate_pool` (20) → rerank → `synthesizer_evidence_top_k` (5); `reranker_enabled` + inject `rerank_fn` cho test. ADR-015.
+8. [x] **Retrieval eval set** — `data/eval/retrieval_eval_30.json` (qrels `source_id`); `eval/metrics.py` + `eval/retrieval.py`; `scripts/run_retrieval_eval.py` (stage-1 hybrid, không rerank). Baseline mẫu (dev, seed 15 doc): mean recall@10/20 ≈ 0.97, mean NDCG@10 ≈ 0.94. ADR-016.
 9. [ ] **Critic agent** (draft) — kiểm citation coverage, output schema kiểm query → quyết định loop thêm hay pass.
 10. [ ] **Swap sang bge-m3** + re-embed toàn corpus khi chuẩn bị thêm query VI hoặc corpus tiếng Việt (ADR-013 hệ quả).
 11. [ ] Chuyển `cli.py` vào `[project.scripts]` để gọi `uv run research-assistant "query"` trực tiếp.
@@ -300,7 +304,24 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`rag/hybrid.py`**: `hybrid_search_stage1` — dense `top_k=50` + BM25 `top_n=50`, min-max từng chân, fuse `(w_d·d + w_b·b)/(w_d+w_b)` (mặc định 0.5/0.5), `final_top_k` hits; `HybridSearchResult`.
 - **`tools/vector_search.py`**: `vector_search(...)` → `list[SearchHit]` (`source="corpus"`), `TypeAdapter(HttpUrl)` cho URL; cache BM25 theo `(collection_name, count)`; `clear_vector_search_cache()` cho test; `@observe` tool + `update_span`.
 - **Tests**: `test_hybrid_retrieval.py` (6), `test_vector_search.py` (2). Tổng **75/75** `pytest`; `ruff` + `mypy` strict ✓.
-- **Next** (theo § Việc tiếp theo): **#6** — wire `vector_search` vào `research_graph.py` (corpus trước / kèm Tavily).
+- **Next**: Session 8 — wire graph (đã xong trong Session 8 log dưới).
+
+### 2026-04-22 — Session 8 (Graph retriever — corpus + web)
+- **`research_graph.py`**: `_corpus_then_web_hits` — `vector_search` (top_k = budget sub-q) trước, dedup URL, rồi Tavily chỉ số slot còn thiếu; trace/Langfuse `n_corpus` / `n_web` / `retrieval_path` (`corpus_only` | `web_only` | `corpus_then_web`). `build_graph` & `run_research` thêm `vector_search_fn` (mặc định `vector_search`). Lỗi web nghiêm trọng → vẫn giữ phần corpus nếu có.
+- **Tests**: `test_graph.py` dùng `vector_search_fn` trả `[]`; thêm 2 test cho `_corpus_then_web_hits` (merge + no web khi đủ 5 corpus).
+- **Verify**: `pytest` 77/77, ruff, mypy.
+
+### 2026-04-22 — Session 10 (Retrieval eval 30)
+- **`data/eval/retrieval_eval_30.json`**: 30 query EN, 1 gold `source_id`/câu (khớp manifest ingest).
+- **`eval/metrics.py`**: DCG/NDCG@k, recall (doc-in-top-k-chunks), `per_query_metrics`.
+- **`eval/retrieval.py`**: `load_retrieval_eval`, `run_hybrid_retrieval_eval` (stage-1 hybrid only).
+- **`scripts/run_retrieval_eval.py`**: in-memory BM25, embed query/chunk; in `--out` JSON. Dev run ~57s, mean recall@10/20 **0.967**, mean NDCG@10 **0.945** (có thể thay đổi theo model/corpus).
+- **Tests**: `test_retrieval_metrics`, `test_retrieval_load` · **87/87** pytest. ADR-016.
+
+### 2026-04-22 — Session 9 (Stage-2 cross-encoder rerank)
+- **`config.py`**: `reranker_enabled`, `reranker_model` (`BAAI/bge-reranker-v2-m3`), `reranker_device`, `retrieval_candidate_pool=20`, `synthesizer_evidence_top_k=5`.
+- **`rag/reranker.py`**: `rerank_search_hits` (CrossEncoder, passage = raw_content|snippet), min--max score; **`research_graph`**: sau merge corpus+web gọi `rerank_fn` (mặc định từ setting); `build_graph`/`run_research` thêm `rerank_fn`, `retrieval_candidate_pool`. Trace: `n_pool`, `n_after_rerank`.
+- **Tests**: `test_reranker.py` (4), `test_graph` dùng `rerank_fn` slice + `pool=5`. **81/81** pytest. ADR-015, `.env.example` gợi ý biến rerank.
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)

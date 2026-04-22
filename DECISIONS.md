@@ -245,6 +245,34 @@
 
 ---
 
+## ADR-015: Stage-2 cross-encoder — `BAAI/bge-reranker-v2-m3` trong graph retriever
+
+- **Ngày**: 2026-04-22
+- **Trạng thái**: Accepted
+- **Context**: ADR-002 + PLAN §5.2 chốt hybrid (stage 1) rồi cross-encoder (stage 2) trước Synthesizer. Cần quyết định: gọi rerank ở đâu, pool bao nhiêu ứng viên, tắt khi nào (CI / máy yếu).
+- **Quyết định**:
+  - Model: **`BAAI/bge-reranker-v2-m3`** qua `sentence_transformers.CrossEncoder` (lazy cache, lock download), `max_length=1024`, device từ `Settings.reranker_device`.
+  - Vị trí: **`graph/research_graph.py` retriever** sau `_corpus_then_web_hits` (pool tối đa `retrieval_candidate_pool`, mặc định 20), cắt xuống `synthesizer_evidence_top_k` (mặc định 5). Một hàm injectable `rerank_fn` + `build_graph(..., rerank_fn=...)` để unit test không tải weights.
+  - Passage cho cặp `(query, doc)`: ưu tiên `SearchHit.raw_content` nếu đủ dài (≥48 ký tự sau strip), không thì `snippet`/`title`; cap 8000 ký tự.
+  - Điểm trả về: min--max chuẩn hoá trong top-k batch vào `SearchHit.score` ∈ [0,1]. Một hit: `score=1.0`, không gọi `predict`.
+  - `Settings.reranker_enabled` (default **True**): `False` để tắt rerank (chỉ `hits[:synthesizer_evidence_top_k]` theo thứ tự pool). Lỗi `predict` / load model: fallback trong `_default_rerank_fn` sang thứ tự gốc (k retriever-level `except` vẫn giữ partial nếu custom `rerank_fn` ném).
+- **Hệ quả**: Lần đầu chạy CLI/UI tải thêm ~hundreds MB–1GB+ tùy môi trường; document trong `.env.example`. Web-only evidence (snippet ngắn) vẫn được rerank với passage = snippet.
+
+---
+
+## ADR-016: Retrieval eval 30 câu — qrels theo `source_id` + metrics macro
+
+- **Ngày**: 2026-04-22
+- **Trạng thái**: Accepted
+- **Context**: ADR-010; Tuần 2 cần Recall@k / NDCG@10 gắn exit criteria.
+- **Quyết định**:
+  - **`data/eval/retrieval_eval_30.json`**: 30 câu (EN), mỗi câu **một** `relevant_source_ids` khớp `source_id` Chroma sau ingest (kèm hậu tố phiên bản arXiv, blog `h_<hex>`).
+  - **Baseline đo lưới (stage-1)**: `hybrid_search_stage1` như `vector_search`, `final_top_k=20`; **recall@10/@20** = macro trung bình theo câu của `|gold ∩ sources(ở top-k chunk)| / |gold|`; **NDCG@10** trên vector nhị phân 10 chunk đầu, IDCG từ sắp lý tưởng cùng multiset.
+  - **`research_assistant.eval`**: `metrics` + `retrieval`; **`scripts/run_retrieval_eval.py`**; JSON output tùy chọn.
+- **Hệ quả**: Số trên 15 doc seed **không** tổng quát domain khác; cần qrels mới khi mở corpus.
+
+---
+
 <!-- Template cho entry mới:
 
 ## ADR-NNN: <Tiêu đề ngắn>

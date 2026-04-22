@@ -112,6 +112,34 @@ class Settings(BaseSettings):
         description="Directory for cached raw source documents (PDF / HTML).",
     )
 
+    # ---- RAG stage 2 — cross-encoder (PLAN §5.2 / ADR-002) ---------------
+    reranker_enabled: bool = Field(
+        default=True,
+        description="When True, retriever re-ranks merged candidates with a "
+        "CrossEncoder before the Synthesizer. Set False in tests to avoid "
+        "downloading the reranker weights.",
+    )
+    reranker_model: str = Field(
+        default="BAAI/bge-reranker-v2-m3",
+        description="sentence-transformers CrossEncoder id for stage-2 precision.",
+    )
+    reranker_device: Literal["cpu", "cuda", "mps"] = Field(
+        default="cpu",
+        description="Torch device for the reranker (match embedding_device if GPU).",
+    )
+    retrieval_candidate_pool: int = Field(
+        default=20,
+        ge=5,
+        le=64,
+        description="Max merged web+corpus hits before cross-encoder (stage-1 cap).",
+    )
+    synthesizer_evidence_top_k: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Hits passed to the Synthesizer after re-ranking.",
+    )
+
     # ---- Validators -----------------------------------------------------
     @field_validator("budget_alert_usd")
     @classmethod

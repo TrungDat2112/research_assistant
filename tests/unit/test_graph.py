@@ -8,7 +8,7 @@ import pytest
 
 from research_assistant.agents._llm import LLMCallResult
 from research_assistant.agents.planner import _PlanDraft, _PlanItemDraft
-from research_assistant.graph.research_graph import build_graph
+from research_assistant.graph.research_graph import _corpus_then_web_hits, build_graph
 from research_assistant.graph.state import SearchHit, new_state
 
 
@@ -26,6 +26,14 @@ def _make_search_stub() -> Any:
         ]
 
     return _fn
+
+
+def _empty_corpus_vector_search(_query: str, **_: Any) -> list[SearchHit]:
+    return []
+
+
+def _rerank_take_top5(_q: str, hits: list[SearchHit]) -> list[SearchHit]:
+    return hits[:5]
 
 
 _PLANNER_DRAFTS: list[dict[str, Any]] = [
@@ -84,7 +92,12 @@ def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr("research_assistant.agents.synthesizer.invoke_llm", synth_stub)
 
-    graph = build_graph(search_fn=_make_search_stub())
+    graph = build_graph(
+        search_fn=_make_search_stub(),
+        vector_search_fn=_empty_corpus_vector_search,
+        rerank_fn=_rerank_take_top5,
+        retrieval_candidate_pool=5,
+    )
     initial = new_state("Explain RAG and its trade-offs.", max_iterations=10)
 
     final: Any = graph.invoke(initial)
@@ -111,7 +124,12 @@ def test_graph_respects_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr("research_assistant.agents.synthesizer.invoke_llm", synth_stub)
 
-    graph = build_graph(search_fn=_make_search_stub())
+    graph = build_graph(
+        search_fn=_make_search_stub(),
+        vector_search_fn=_empty_corpus_vector_search,
+        rerank_fn=_rerank_take_top5,
+        retrieval_candidate_pool=5,
+    )
     # max_iterations=1 forces the loop to exit after the first synthesizer
     # call, leaving sub_q 2 and 3 unanswered but still producing a report.
     initial = new_state("A simple query", max_iterations=1)
@@ -119,3 +137,72 @@ def test_graph_respects_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
     final: Any = graph.invoke(initial)
     assert final["final_report"] is not None
     assert len(final["drafts"]) == 1  # only sq_1 got synthesized
+
+
+def test_corpus_then_web_fills_from_web_with_right_budget() -> None:
+    def _vsearch(q: str, **kwargs: Any) -> list[SearchHit]:
+        _ = q, kwargs
+        return [
+            SearchHit(
+                url=f"https://corpus.example/doc{i}",  # type: ignore[arg-type]
+                title="Corpus",
+                snippet="body",
+                source="corpus",
+            )
+            for i in range(2)
+        ]
+
+    web_calls: list[int] = []
+
+    def _web(q: str, *, max_results: int = 5) -> list[SearchHit]:
+        _ = q
+        web_calls.append(max_results)
+        return [
+            SearchHit(
+                url=f"https://web.example/p{i}",  # type: ignore[arg-type]
+                title="Web",
+                snippet="snippet",
+                source="web",
+            )
+            for i in range(max_results)
+        ]
+
+    hits, stats = _corpus_then_web_hits(
+        "What is LoRA?",
+        max_results=5,
+        vector_fn=_vsearch,
+        web_fn=_web,
+    )
+    assert len(hits) == 5
+    assert stats["n_corpus"] == 2
+    assert stats["n_web"] == 3
+    assert stats["retrieval_path"] == "corpus_then_web"
+    assert web_calls == [3]
+
+
+def test_corpus_five_hits_skips_web_call() -> None:
+    def _vsearch(q: str, **kwargs: Any) -> list[SearchHit]:
+        _ = q, kwargs
+        return [
+            SearchHit(
+                url=f"https://corpus.example/doc{i}",  # type: ignore[arg-type]
+                title="C",
+                snippet="b",
+                source="corpus",
+            )
+            for i in range(5)
+        ]
+
+    def _web(_q: str, *, max_results: int = 5) -> list[SearchHit]:
+        raise AssertionError("web_search should not run when corpus fills budget")
+
+    hits, stats = _corpus_then_web_hits(
+        "q",
+        max_results=5,
+        vector_fn=_vsearch,
+        web_fn=_web,
+    )
+    assert len(hits) == 5
+    assert stats["n_corpus"] == 5
+    assert stats["n_web"] == 0
+    assert stats["retrieval_path"] == "corpus_only"
