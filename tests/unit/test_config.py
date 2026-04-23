@@ -24,6 +24,7 @@ def test_defaults_do_not_require_env(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert settings.output_language == "vi"
+    assert settings.embedding_model == "BAAI/bge-m3"
     assert settings.max_iterations == 8
     assert settings.max_budget_usd == pytest.approx(10.0)
     assert settings.per_query_cap_usd == pytest.approx(0.30)

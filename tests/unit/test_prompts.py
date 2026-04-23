@@ -29,7 +29,12 @@ def _sample_evidence(n: int, sq_id: str = "sq_1") -> list[Evidence]:
 
 def test_available_templates_lists_expected_files() -> None:
     templates = available_templates()
-    for expected in ("planner_v1.jinja", "synthesizer_v1.jinja", "reporter_v1.jinja"):
+    for expected in (
+        "planner_v1.jinja",
+        "synthesizer_v1.jinja",
+        "critic_v1.jinja",
+        "reporter_v1.jinja",
+    ):
         assert expected in templates, f"missing {expected} in {templates}"
 
 
@@ -39,6 +44,24 @@ def test_planner_template_renders_both_languages() -> None:
     assert "Vietnamese" in vi
     assert "English" in en
     assert "sq_1" in vi and "sq_1" in en
+
+
+def test_critic_template_renders() -> None:
+    plan = SubQuestion(id="sq_1", question="What is LoRA?", rationale="Understand adaptation")
+    evs = _sample_evidence(2, "sq_1")
+    draft = Draft(sub_question_id="sq_1", content="LoRA is low-rank [^1].", model="m")
+    out = render(
+        "critic_v1.jinja",
+        user_query="Explain LoRA",
+        sub_question=plan,
+        evidence=evs,
+        draft=draft,
+        paragraph_citation_coverage=1.0,
+        output_language="en",
+    )
+    assert "What is LoRA?" in out
+    assert "LoRA is low-rank" in out
+    assert "Doc 1" in out
 
 
 def test_synthesizer_template_includes_evidence() -> None:

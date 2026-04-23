@@ -1,4 +1,4 @@
-"""LangGraph wiring for the research pipeline (planner → retrieve → synthesize → report).
+"""LangGraph wiring for the research pipeline (planner → retrieve → synthesize → critic).
 
 Topology::
 
@@ -9,10 +9,19 @@ Topology::
                     ┌──────────┐
                     │ retriever│◀────────────┐
                     └────┬─────┘             │
-                         ▼                   │ (more sub-qs left)
+                         ▼                   │ retry / more sub-qs
                     ┌──────────┐             │
-                    │synthesiz.│─────────────┘
+                    │synthesiz.│             │
+                    └────┬─────┘             │
+                         ▼                   │
+                    ┌──────────┐             │
+                    │  critic  │─────────────┘
                     └────┬─────┘
+                         │ pass
+                         ▼
+                    ┌──────────┐
+                    │   tick   │──▶ {retriever | reporter}
+                    └──────────┘
                          │ (all sub-qs done)
                          ▼
                     ┌──────────┐
@@ -36,6 +45,7 @@ from typing import Any, Literal, cast
 
 from langgraph.graph import END, START, StateGraph
 
+from research_assistant.agents.critic import critic_node, critic_route_edge
 from research_assistant.agents.planner import planner_node
 from research_assistant.agents.reporter import reporter_node
 from research_assistant.agents.synthesizer import synthesizer_node
@@ -283,13 +293,23 @@ def _loop_condition(state: ResearchState) -> Literal["retriever", "reporter"]:
     return "reporter"
 
 
-def _increment_iterations(state: ResearchState) -> dict[str, Any]:
-    """Tiny bookkeeping node that bumps the ReAct iteration counter.
+def _tick_node(state: ResearchState) -> dict[str, Any]:
+    """Bookkeeping node after a successful critique advance.
 
-    Decoupled so ``_loop_condition`` can read a monotonic counter without
-    relying on any single business-logic node to maintain it.
+    The :mod:`critic` node now owns ``iterations += 1``; ``tick`` only keeps a
+    trace marker so dashboards retain the familiar step boundary.
     """
-    return {"iterations": state.get("iterations", 0) + 1}
+    _ = state
+    return {
+        "trace": [
+            StepLog(
+                node="tick",
+                duration_ms=0.0,
+                status="ok",
+                details={},
+            ),
+        ],
+    }
 
 
 def build_graph(
@@ -325,7 +345,11 @@ def build_graph(
     fn: SearchFn = search_fn if search_fn is not None else web_search_with_fallback
     vfn: VectorSearchFn = vector_search_fn if vector_search_fn is not None else vector_search
     rfn: RerankFn = rerank_fn if rerank_fn is not None else _default_rerank_fn()
-    pool = retrieval_candidate_pool if retrieval_candidate_pool is not None else settings.retrieval_candidate_pool
+    pool = (
+        retrieval_candidate_pool
+        if retrieval_candidate_pool is not None
+        else settings.retrieval_candidate_pool
+    )
     retriever_node = _retriever_node_factory(fn, vfn, rfn, candidate_pool=pool)
 
     builder = StateGraph(ResearchState)
@@ -334,13 +358,19 @@ def build_graph(
     # LangGraph's structural node type as cleanly as module-level nodes.
     builder.add_node("retriever", retriever_node)  # type: ignore[arg-type]
     builder.add_node("synthesizer", synthesizer_node)
-    builder.add_node("tick", _increment_iterations)
+    builder.add_node("critic", critic_node)
+    builder.add_node("tick", _tick_node)
     builder.add_node("reporter", reporter_node)
 
     builder.add_edge(START, "planner")
     builder.add_edge("planner", "retriever")
     builder.add_edge("retriever", "synthesizer")
-    builder.add_edge("synthesizer", "tick")
+    builder.add_edge("synthesizer", "critic")
+    builder.add_conditional_edges(
+        "critic",
+        critic_route_edge,
+        {"retriever": "retriever", "tick": "tick"},
+    )
     builder.add_conditional_edges(
         "tick",
         _loop_condition,

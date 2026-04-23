@@ -194,7 +194,7 @@
 ## ADR-013: RAG ingestion stack — Chroma dev, bge-small-en-v1.5 dev, trafilatura-only, abstract-as-prepend
 
 - **Ngày**: 2026-04-22
-- **Trạng thái**: Accepted
+- **Trạng thái**: Accepted *(default embedding trong repo: xem **ADR-018** — `BAAI/bge-m3`; `bge-small` chỉ còn là lựa chọn override tốc độ.)*
 - **Context**: Bắt đầu RAG pipeline (PLAN §5.1). Trước khi code cần chốt 4 chi tiết không hiển nhiên từ PLAN:
   1. **Vector store dev**: PLAN §3 đã nói "Qdrant prod, Chroma dev" nhưng chưa chốt client mode (Chroma Cloud / HTTP server / PersistentClient local / in-memory). Dev phải chạy được offline, không Docker.
   2. **Embedding model**: PLAN ghi `BAAI/bge-m3` (~2.3 GB, multilingual). Dev corpus Tuần 2 toàn paper/blog tiếng Anh (ADR-010); tải 2.3 GB + embed 5 phút/run vs. bge-small-en-v1.5 (130 MB, embed nhanh 3× trên CPU) → chênh lệch thời gian lặp rất lớn khi iterate chunking/retrieval logic.
@@ -270,6 +270,36 @@
   - **Baseline đo lưới (stage-1)**: `hybrid_search_stage1` như `vector_search`, `final_top_k=20`; **recall@10/@20** = macro trung bình theo câu của `|gold ∩ sources(ở top-k chunk)| / |gold|`; **NDCG@10** trên vector nhị phân 10 chunk đầu, IDCG từ sắp lý tưởng cùng multiset.
   - **`research_assistant.eval`**: `metrics` + `retrieval`; **`scripts/run_retrieval_eval.py`**; JSON output tùy chọn.
 - **Hệ quả**: Số trên 15 doc seed **không** tổng quát domain khác; cần qrels mới khi mở corpus.
+
+---
+
+## ADR-017: Critic agent (draft) — deterministic paragraph citation + Sonnet structured verdict
+
+- **Ngày**: 2026-04-23
+- **Trạng thái**: Accepted
+- **Context**: PLAN §6.2 và ADR-005 yêu cầu vòng Critic trước khi chuyển sub-question; cần quyết định khi nào retry retrieval+synthesis vs advance, và làm sao enforce citation coverage ~90% mà không chỉ dựa LLM.
+- **Options cân nhắc**:
+  - (A) Chỉ LLM-as-judge (Sonnet) — đơn giản nhưng khó gate cứng 90% và dễ variance.
+  - (B) Chỉ heuristic (regex / đếm đoạn) — rẻ, reproducible, nhưng bỏ sót semantics “có trả lời sub-question không”.
+  - (C) Kết hợp: metric đoạn văn có `[^N]` + schema structured output (`should_pass`, `overall_score`, `addresses_sub_question`) + retry có budget.
+- **Quyết định**: **(C)**.
+  - **Metric**: tỷ lệ đoạn “substantive” (đủ dài) chứa ít nhất một marker `[^N]`; bỏ qua body “insufficient evidence” / “Chưa đủ dữ liệu” (coi coverage = 1.0).
+  - **LLM**: `invoke_structured_llm` cùng model Planner (`anthropic_planner_model`), prompt `critic_v1.jinja`.
+  - **Pass**: `paragraph_metric >= Settings.critic_min_paragraph_citation_coverage` (default 0.9) **và** `overall_score >= 4` **và** `addresses_sub_question` **và** `should_pass`.
+  - **Retry**: khi fail và `critic_attempts[sub_q] < critic_max_attempts_per_sub_question - 1`, route `retriever` lại, ghi `synth_critic_feedback` vào prompt Synthesizer lần sau; ngược lại **forced_pass** với `Critique.forced_pass=True`.
+  - **Tắt nhanh**: `critic_enabled=False` (test/CI) → auto-pass, không gọi Sonnet.
+- **Hệ quả**: Chi phí tăng theo số sub-question (thêm 1 structured call/sub-q); retry làm tăng retrieval+synth+critic. LangGraph: `synthesizer → critic` với nhánh `retriever` | `tick`; `iterations` do Critic tăng (tick chỉ trace).
+
+---
+
+## ADR-018: Default dense embedding — `BAAI/bge-m3` (supersedes ADR-013 dev default)
+
+- **Ngày**: 2026-04-23
+- **Trạng thái**: Accepted
+- **Context**: ADR-013 đã chọn `bge-small-en-v1.5` làm **default dev** để rút ngắn vòng lặp ingest trên corpus EN Tuần 2. Chuẩn bị query/corpus tiếng Việt và khớp PLAN §3 (bge-m3) yêu cầu đổi default trong repo.
+- **Quyết định**: `Settings.embedding_model` mặc định = **`BAAI/bge-m3`**. Dev muốn lặp nhanh trên EN-only có thể set `EMBEDDING_MODEL=BAAI/bge-small-en-v1.5` và **`scripts/ingest_seed_corpus.py --rebuild`** (dimension khác → bắt buộc rebuild Chroma).
+- **Lý do**: Một default duy nhất giảm nhầm lẫn “local store đang 384-dim hay 1024-dim”; m3 sẵn sàng đa ngôn ngữ không cần đổi code khi thêm VI.
+- **Hệ quả**: Lần đầu chạy ingest tải ~2.3 GB; embed CPU chậm hơn bge-small; manifest + eval số liệu Recall/NDCG có thể lệch nhẹ so baseline 384-dim cũ.
 
 ---
 

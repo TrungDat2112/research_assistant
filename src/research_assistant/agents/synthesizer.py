@@ -36,7 +36,7 @@ def _extract_citations(content: str, evidence: list[Evidence]) -> list[Citation]
     """Map ``[^N]`` markers in ``content`` back to evidence ref labels.
 
     Markers are 1-indexed to match the prompt numbering. Out-of-range
-    markers are dropped with a warning — the Critic (Week 4) will penalise
+    markers are dropped with a warning — the Critic may penalise
     drafts that leave them unresolved.
     """
     seen: set[int] = set()
@@ -62,6 +62,7 @@ def synthesize_one(
     evidence: list[Evidence],
     *,
     output_language: str = "vi",
+    critic_feedback: str | None = None,
     current_cost_usd: float = 0.0,
     per_query_cap_usd: float | None = None,
 ) -> Draft:
@@ -77,6 +78,7 @@ def synthesize_one(
         sub_question=sub_question.question,
         evidence=evidence,
         output_language=output_language,
+        critic_feedback=critic_feedback,
     )
 
     result = invoke_llm(
@@ -155,7 +157,6 @@ def synthesizer_node(state: ResearchState) -> dict[str, Any]:
         drafts_update[sub_q.id] = draft
         return {
             "drafts": drafts_update,
-            "current_sub_question_index": idx + 1,
             "trace": [
                 StepLog(
                     node="synthesizer",
@@ -171,13 +172,13 @@ def synthesizer_node(state: ResearchState) -> dict[str, Any]:
             sub_q,
             evidence_for_q,
             output_language=state.get("output_language", "vi"),
+            critic_feedback=state.get("synth_critic_feedback"),
             current_cost_usd=current_cost,
             per_query_cap_usd=state.get("per_query_cap_usd"),
         )
     except Exception as exc:
         logger.exception("Synthesizer failed for %s", sub_q.id)
         return {
-            "current_sub_question_index": idx + 1,
             "trace": [
                 StepLog(
                     node="synthesizer",
@@ -208,7 +209,6 @@ def synthesizer_node(state: ResearchState) -> dict[str, Any]:
     )
     return {
         "drafts": drafts_update,
-        "current_sub_question_index": idx + 1,
         "total_cost_usd": current_cost + draft.cost_usd,
         "trace": [
             StepLog(

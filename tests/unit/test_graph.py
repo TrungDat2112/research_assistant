@@ -8,6 +8,7 @@ import pytest
 
 from research_assistant.agents._llm import LLMCallResult
 from research_assistant.agents.planner import _PlanDraft, _PlanItemDraft
+from research_assistant.config import get_settings
 from research_assistant.graph.research_graph import _corpus_then_web_hits, build_graph
 from research_assistant.graph.state import SearchHit, new_state
 
@@ -84,6 +85,8 @@ def _synthesizer_stub_factory() -> Any:
 
 
 def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CRITIC_ENABLED", "false")
+    get_settings.cache_clear()
     planner_stub = _structured_planner_stub()
     synth_stub, synth_counter = _synthesizer_stub_factory()
     monkeypatch.setattr(
@@ -112,10 +115,12 @@ def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     assert synth_counter["n"] == 3
     # Trace should include every node at least once.
     nodes = {step.node for step in final["trace"]}
-    assert {"planner", "retriever", "synthesizer", "reporter"} <= nodes
+    assert {"planner", "retriever", "synthesizer", "critic", "reporter", "tick"} <= nodes
 
 
 def test_graph_respects_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CRITIC_ENABLED", "false")
+    get_settings.cache_clear()
     planner_stub = _structured_planner_stub()
     synth_stub, _ = _synthesizer_stub_factory()
     monkeypatch.setattr(

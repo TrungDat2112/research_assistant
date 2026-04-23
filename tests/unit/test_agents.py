@@ -183,7 +183,7 @@ def test_synthesizer_node_handles_no_evidence() -> None:
     update = synthesizer_node(state)
     assert "sq_1" in update["drafts"]
     assert update["drafts"]["sq_1"].cost_usd == 0.0
-    assert update["current_sub_question_index"] == 1
+    assert "current_sub_question_index" not in update
     assert update["trace"][0].status == "skipped"
 
 
@@ -200,7 +200,7 @@ def test_synthesizer_node_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     update = synthesizer_node(state)
     assert update["drafts"]["sq_1"].citations[0].marker == 1
     assert update["trace"][0].status == "ok"
-    assert update["current_sub_question_index"] == 1
+    assert "current_sub_question_index" not in update
 
 
 # ---------------------------------------------------------------------------

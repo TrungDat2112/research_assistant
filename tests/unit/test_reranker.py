@@ -17,7 +17,9 @@ def _clear_settings_cache() -> None:
     get_settings.cache_clear()
 
 
-def _hit(url: str, snippet: str, raw: str | None = "full body " * 20, source: str = "corpus") -> SearchHit:
+def _hit(
+    url: str, snippet: str, raw: str | None = "full body " * 20, source: str = "corpus"
+) -> SearchHit:
     return SearchHit(
         url=url,  # type: ignore[arg-type]
         title="T",

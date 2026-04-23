@@ -8,6 +8,8 @@ Grounded in:
   * ADR-008 — Anthropic Claude for Planner/Critic and Synthesizer.
   * ADR-009 — Langfuse Cloud for observability.
   * ADR-011 — hard budget caps ($10 total, $0.30 per query).
+  * ADR-018 — default dense embedding ``BAAI/bge-m3`` (override with
+    ``EMBEDDING_MODEL`` for English-only fast iteration).
 """
 
 from __future__ import annotations
@@ -75,12 +77,12 @@ class Settings(BaseSettings):
     output_language: Literal["vi", "en"] = Field(default="vi")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO")
 
-    # ---- RAG (ADR-013) --------------------------------------------------
-    # Dev-only default: English-small bge for fast iteration. Swap to
-    # ``BAAI/bge-m3`` (~2.3 GB, multilingual) before running VI eval or
-    # production indexing — see ADR-013 for the trade-off.
+    # ---- RAG (ADR-013 + ADR-018) ----------------------------------------
+    # Default ``bge-m3`` for multilingual / Vietnamese-ready indexing. For
+    # fast iteration on English-only corpora, set ``EMBEDDING_MODEL`` to
+    # ``BAAI/bge-small-en-v1.5`` and run ``ingest_seed_corpus.py --rebuild``.
     embedding_model: str = Field(
-        default="BAAI/bge-small-en-v1.5",
+        default="BAAI/bge-m3",
         description="Sentence-transformers model id for dense embeddings.",
     )
     embedding_device: Literal["cpu", "cuda", "mps"] = Field(
@@ -138,6 +140,25 @@ class Settings(BaseSettings):
         ge=1,
         le=20,
         description="Hits passed to the Synthesizer after re-ranking.",
+    )
+
+    # ---- Critic (PLAN §6.2 / ADR-005) -----------------------------------
+    critic_enabled: bool = Field(
+        default=True,
+        description="When False, the Critic auto-passes (tests / dry runs).",
+    )
+    critic_max_attempts_per_sub_question: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="Max synthesis rounds per sub-question (initial + retries).",
+    )
+    critic_min_paragraph_citation_coverage: float = Field(
+        default=0.9,
+        ge=0.0,
+        le=1.0,
+        description="Reject drafts when deterministic paragraph citation coverage "
+        "falls below this threshold (ADR-005).",
     )
 
     # ---- Validators -----------------------------------------------------

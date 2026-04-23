@@ -44,7 +44,13 @@ def _get_tokenizer(model_id: str) -> PreTrainedTokenizerBase:
     from transformers import AutoTokenizer
 
     logger.debug("Loading tokenizer %s", model_id)
-    return AutoTokenizer.from_pretrained(model_id, use_fast=True)
+    tok = AutoTokenizer.from_pretrained(model_id, use_fast=True)
+    # Chunking only needs token ids + char offsets; it never runs a LM forward
+    # pass on the full document. Many sentence-transformers tokenizers default
+    # ``model_max_length`` to 8k and warn or truncate long PDFs — override so
+    # slicing stays faithful to the full ``doc.text``.
+    tok.model_max_length = 1_000_000
+    return tok
 
 
 # ---------------------------------------------------------------------------

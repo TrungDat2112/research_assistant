@@ -101,6 +101,31 @@ class Draft(BaseModel):
     cost_usd: float = Field(default=0.0, ge=0.0)
 
 
+class Critique(BaseModel):
+    """Critic verdict for one sub-question draft (Week 2 draft — LLM + deterministic checks)."""
+
+    sub_question_id: str = Field(..., pattern=r"^sq_\d+$")
+    passed: bool
+    forced_pass: bool = Field(
+        default=False,
+        description="True when attempt budget exhausted but the graph must advance.",
+    )
+    overall_score: int = Field(..., ge=1, le=5)
+    paragraph_citation_coverage: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Deterministic share of substantive paragraphs containing [^N].",
+    )
+    addresses_sub_question: bool
+    issues: list[str] = Field(default_factory=list)
+    suggested_fixes: list[str] = Field(default_factory=list)
+    model: str
+    tokens_in: int = Field(default=0, ge=0)
+    tokens_out: int = Field(default=0, ge=0)
+    cost_usd: float = Field(default=0.0, ge=0.0)
+
+
 class StepLog(BaseModel):
     """One entry in the reasoning trace — emitted by every graph node."""
 
@@ -158,6 +183,12 @@ class ResearchState(TypedDict, total=False):
     drafts: Annotated[dict[str, Draft], _merge_dict]
     # key = sub_question_id  →  Draft.
 
+    # Critique -----------------------------------------------------------
+    critiques: Annotated[dict[str, Critique], _merge_dict]
+    critic_attempts: Annotated[dict[str, int], _merge_dict]
+    synth_critic_feedback: str | None
+    critic_route_next: Literal["retriever", "tick"] | None
+
     # Loop control -------------------------------------------------------
     iterations: int
     max_iterations: int
@@ -190,6 +221,10 @@ def new_state(
         plan=[],
         evidence={},
         drafts={},
+        critiques={},
+        critic_attempts={},
+        synth_critic_feedback=None,
+        critic_route_next=None,
         iterations=0,
         max_iterations=max_iterations,
         current_sub_question_index=0,

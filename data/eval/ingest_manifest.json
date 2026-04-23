@@ -1,19 +1,19 @@
 {
   "config_path": "D:\\research-assistant\\configs\\seed_corpus.yaml",
-  "embedding_model": "BAAI/bge-small-en-v1.5",
-  "embedding_dim": 384,
+  "embedding_model": "BAAI/bge-m3",
+  "embedding_dim": 1024,
   "chunk_size_tokens": 500,
   "chunk_overlap_tokens": 50,
   "collection": "ai_ml_corpus_v1",
   "chroma_persist_dir": "D:\\research-assistant\\data\\chroma",
   "docs_fetched": 15,
   "docs_failed": 0,
-  "chunks_indexed": 766,
+  "chunks_indexed": 819,
   "timings_sec": {
-    "fetch": 47.24,
-    "chunk": 22.32,
-    "embed": 224.33,
-    "upsert": 3.59
+    "fetch": 27.75,
+    "chunk": 85.76,
+    "embed": 1742.84,
+    "upsert": 6.43
   },
   "sources": [
     {

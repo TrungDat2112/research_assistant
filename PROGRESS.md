@@ -7,11 +7,13 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 2 — RAG + graph + rerank; retrieval eval 30 câu (Recall@k/NDCG@10) + script. Tiếp: Critic / smoke / bge-m3.`
-**Last updated**: 2026-04-22
+**Phase**: `Tuần 2 — RAG + graph + rerank + Critic; default embedding bge-m3 (ADR-018). Tiếp: smoke full / CLI script entry / re-run retrieval eval sau khi ingest xong.`
+**Last updated**: 2026-04-23
 **Last session summary**:
-- **Deps mới** (`pyproject.toml`): `chromadb>=0.5.15`, `sentence-transformers>=3.0.0`, `trafilatura>=1.12.0`, `arxiv>=2.1.3`, `pymupdf>=1.24.0`, `pyyaml>=6.0.2`. `uv sync` → 176 packages resolved.
-- **Settings mới** (`config.py`): `embedding_model` (default `BAAI/bge-small-en-v1.5`, dev-only EN-only; swap `bge-m3` trước VI eval — ADR-013), `embedding_device`, `chroma_persist_dir` (`data/chroma/`), `corpus_collection` (`ai_ml_corpus_v1`), `chunk_size_tokens=500` / `chunk_overlap_tokens=50`, `raw_docs_dir`.
+- **bge-m3 default** (`config.py` / ADR-018): `embedding_model=BAAI/bge-m3`; chunking tokenizer `model_max_length` nới để PDF dài không cảnh báo 8k; `.env.example` ghi override `bge-small` khi cần lặp nhanh. **Sau khi pull**: chạy `uv run python scripts/ingest_seed_corpus.py --rebuild` để Chroma + `data/eval/ingest_manifest.json` khớp 1024-dim (CPU có thể ~30–60 phút / 819 chunk).
+- **Critic (draft)**: node `critic` sau `synthesizer`; metric đoạn+citation + structured Sonnet; retry → `retriever` + feedback vào synthesizer; `CRITIC_ENABLED=false` trong unit graph tests; ADR-017.
+- **Deps mới** (`pyproject.toml`) *(session trước)*: `chromadb>=0.5.15`, `sentence-transformers>=3.0.0`, `trafilatura>=1.12.0`, `arxiv>=2.1.3`, `pymupdf>=1.24.0`, `pyyaml>=6.0.2`. `uv sync` → 176 packages resolved.
+- **Settings** (`config.py`) *(lịch sử + hiện tại)*: `embedding_model` (**default `BAAI/bge-m3`** — ADR-018; override `bge-small` để lặp nhanh), `embedding_device`, `chroma_persist_dir`, `corpus_collection`, chunk sizes, `raw_docs_dir`.
 - **RAG package** (`src/research_assistant/rag/`, +~720 LoC):
   - `schemas.py` — `SourceDoc` / `Chunk` / `ChunkMetadata` Pydantic + `make_source_id` (SHA-1 tail cho HTML), `to_chroma()` flatten metadata sang scalar-only.
   - `chunking.py` — token-aware slicer dùng HF fast tokenizer của embedding model (lru-cached). `_iter_sections` dò Markdown `#` + ALL-CAPS ngắn; `_summarise_for_prepend` lấy `doc.summary` > 2 câu đầu > title. Cắt theo offset → decode body; `text` = `[Title] summary\n\nbody` cho embedding. Empty / overlap≥size → error rõ.
@@ -56,6 +58,7 @@ d:\research-assistant\
 │   │   ├── _llm.py               # ChatAnthropic wrapper + cost estimator + generation spans
 │   │   ├── planner.py            # Sonnet 4.5 structured output → SubQuestion[]; @observe span
 │   │   ├── synthesizer.py        # Haiku 4.5 → Draft với [^N] citations; @observe span
+│   │   ├── critic.py             # Sonnet structured Critique; retry vs advance; @observe span
 │   │   └── reporter.py           # deterministic Jinja render + trace_url footer; @observe span
 │   ├── tools/
 │   │   ├── web_search.py         # Tavily wrapper + fallback ladder; @observe tool span
@@ -67,12 +70,13 @@ d:\research-assistant\
 │   │   ├── loader.py             # Jinja2 Environment + render helper (StrictUndefined)
 │   │   ├── planner_v1.jinja
 │   │   ├── synthesizer_v1.jinja
+│   │   ├── critic_v1.jinja
 │   │   └── reporter_v1.jinja
 │   ├── rag/
 │   │   ├── __init__.py
 │   │   ├── schemas.py            # SourceDoc / Chunk / ChunkMetadata
 │   │   ├── chunking.py           # token-aware slicer + contextual prepend
-│   │   ├── embedding.py          # bge-small wrapper, singleton model loader
+│   │   ├── embedding.py          # sentence-transformers wrapper (default bge-m3)
 │   │   ├── vector_store.py       # ChromaStore (PersistentClient dev)
 │   │   ├── bm25_index.py         # rank_bm25 BM25CorpusIndex (parallel lexical leg)
 │   │   ├── hybrid.py             # stage-1 hybrid fusion 0.5/0.5, top-50+50
@@ -113,7 +117,7 @@ d:\research-assistant\
 │   └── eval/
 │       ├── week1_outputs.md
 │       ├── week1_metrics.json
-│       ├── ingest_manifest.json  # 15 docs / 766 chunks / bge-small 384-dim
+│       ├── ingest_manifest.json  # sau ingest: 15 docs / ~819 chunks / bge-m3 1024-dim (rebuild bắt buộc khi đổi model)
 │       └── retrieval_eval_30.json  # 30 qrels (source_id)
 ├── configs/
 │   └── seed_corpus.yaml          # 10 arXiv + 5 blogs
@@ -159,8 +163,8 @@ d:\research-assistant\
 6. [x] **Integrate vector_search vào graph**: `research_graph.py` gọi `vector_search` trước, ghép với `web_search_with_fallback` theo URL-dedup; `build_graph` / `run_research` nhận `vector_search_fn` (test truyền `[]` để khỏi load embedder).
 7. [x] **Cross-encoder rerank** (`BAAI/bge-reranker-v2-m3`, `rag/reranker.py`) — pool `retrieval_candidate_pool` (20) → rerank → `synthesizer_evidence_top_k` (5); `reranker_enabled` + inject `rerank_fn` cho test. ADR-015.
 8. [x] **Retrieval eval set** — `data/eval/retrieval_eval_30.json` (qrels `source_id`); `eval/metrics.py` + `eval/retrieval.py`; `scripts/run_retrieval_eval.py` (stage-1 hybrid, không rerank). Baseline mẫu (dev, seed 15 doc): mean recall@10/20 ≈ 0.97, mean NDCG@10 ≈ 0.94. ADR-016.
-9. [ ] **Critic agent** (draft) — kiểm citation coverage, output schema kiểm query → quyết định loop thêm hay pass.
-10. [ ] **Swap sang bge-m3** + re-embed toàn corpus khi chuẩn bị thêm query VI hoặc corpus tiếng Việt (ADR-013 hệ quả).
+9. [x] **Critic agent** (draft) — kiểm citation coverage (paragraph `[^N]` metric), structured Sonnet (`critic_v1.jinja`) kiểm sub-question → retry `retriever` hoặc advance; `critic_enabled` tắt cho test. ADR-017.
+10. [x] **Swap sang bge-m3** + hướng dẫn re-embed (`ingest_seed_corpus.py --rebuild`); ADR-018; chunking fix tokenizer dài. *Manifest trong repo cập nhật khi bạn chạy ingest local xong.*
 11. [ ] Chuyển `cli.py` vào `[project.scripts]` để gọi `uv run research-assistant "query"` trực tiếp.
 12. [ ] Re-run full 5-query smoke để đo delta cost/quality sau 2 fix + instrumentation + corpus (expect `trace_id` / `trace_url` + retrieval-hit stats).
 
@@ -322,6 +326,26 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`config.py`**: `reranker_enabled`, `reranker_model` (`BAAI/bge-reranker-v2-m3`), `reranker_device`, `retrieval_candidate_pool=20`, `synthesizer_evidence_top_k=5`.
 - **`rag/reranker.py`**: `rerank_search_hits` (CrossEncoder, passage = raw_content|snippet), min--max score; **`research_graph`**: sau merge corpus+web gọi `rerank_fn` (mặc định từ setting); `build_graph`/`run_research` thêm `rerank_fn`, `retrieval_candidate_pool`. Trace: `n_pool`, `n_after_rerank`.
 - **Tests**: `test_reranker.py` (4), `test_graph` dùng `rerank_fn` slice + `pool=5`. **81/81** pytest. ADR-015, `.env.example` gợi ý biến rerank.
+
+### 2026-04-23 — Session 12 (bge-m3 default)
+- **`config.py`**: default `embedding_model=BAAI/bge-m3`; docstring ADR-018.
+- **`rag/embedding.py`**: default ctor + docstring khớp m3.
+- **`rag/chunking.py`**: sau `AutoTokenizer.from_pretrained`, set `model_max_length=1_000_000` để tokenize full PDF cho offset chunking (tránh cảnh báo / truncate 8192 của tokenizer m3).
+- **`DECISIONS.md`**: **ADR-018**; ADR-013 ghi chú default hiện tại là m3.
+- **`.env.example`**: block `EMBEDDING_MODEL` / `bge-small` override.
+- **`tests/unit/test_config.py`**: assert default `BAAI/bge-m3`.
+- **Ops**: committer chạy `uv run python scripts/ingest_seed_corpus.py --rebuild` để làm mới `data/chroma/` + `ingest_manifest.json` (ingest nền có thể vẫn đang embed CPU).
+
+### 2026-04-23 — Session 11 (Critic draft)
+- **`graph/state.py`**: thêm `Critique`, `critiques` / `critic_attempts` / `synth_critic_feedback` / `critic_route_next` trên `ResearchState`.
+- **`config.py`**: `critic_enabled`, `critic_max_attempts_per_sub_question` (default 2), `critic_min_paragraph_citation_coverage` (0.9).
+- **`agents/critic.py`**: `paragraph_citation_coverage`, `critic_node`, `critic_route_edge`; kết hợp metric + `_CritiqueDraft` structured; lỗi LLM → forced pass.
+- **`prompts/critic_v1.jinja`**, **`synthesizer_v1.jinja`**: feedback block (StrictUndefined-safe).
+- **`agents/synthesizer.py`**: không tự tăng `current_sub_question_index`; nhận `synth_critic_feedback`.
+- **`graph/research_graph.py`**: `synthesizer → critic` → `{retriever|tick}`; `tick` chỉ trace (iterations do critic).
+- **Tests**: `test_critic.py`, cập nhật `test_graph` (`CRITIC_ENABLED=false`), `test_agents`, `test_prompts`.
+- **Toolchain**: `ruff` / `mypy strict` / `pytest` **92/92** pass.
+- **Next**: bge-m3 swap, `[project.scripts]` CLI, full smoke 5 query.
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)

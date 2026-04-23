@@ -1,8 +1,8 @@
 """Local dense-embedding wrapper around ``sentence-transformers``.
 
-ADR-013: dev default is ``BAAI/bge-small-en-v1.5`` (~130 MB) for fast
-iteration; swap to ``BAAI/bge-m3`` (~2.3 GB, multilingual) before VI eval
-or production via ``Settings.embedding_model``.
+ADR-018: repo default is ``BAAI/bge-m3`` (multilingual). Use
+``BAAI/bge-small-en-v1.5`` via settings when you need a lighter English-only
+dev loop (ADR-013).
 
 Contract:
   * :func:`embed_documents` — for corpus chunks; normalised cosine vectors.
@@ -54,7 +54,7 @@ class EmbeddingModel:
 
     def __init__(
         self,
-        model_id: str = "BAAI/bge-small-en-v1.5",
+        model_id: str = "BAAI/bge-m3",
         device: str = "cpu",
         *,
         batch_size: int = 32,
