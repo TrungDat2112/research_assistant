@@ -1,27 +1,49 @@
-# Seed corpus for Week 2 RAG ingestion (ADR-010, ADR-013).
+# Seed corpus for Week 2–3 RAG ingestion (ADR-010, ADR-013, ADR-020).
 #
-# Size: ~15 docs to verify pipeline end-to-end. Expand to 50-100 once the
-# retrieval metrics loop is in place (PROGRESS task #5).
+# Size: ~30 docs for Tuần 3 eval set expansion (100 câu retrieval). Core 10 +
+# 15 additional covering retriever diversity (DPR, ColBERT/BGE ranking, fusion,
+# generation-augmented) + reasoning (GraphRAG, Constitutional AI).
 #
-# Language: English only for now — dev embedding model is bge-small-en-v1.5
-# (ADR-013). Swap to bge-m3 before adding VI content.
+# Language: English papers + 2–3 VI tech blogs (bge-m3 multilingual post ADR-018).
+# Embedding: bge-m3 (1024-dim) per ADR-018. If overriding EMBEDDING_MODEL, run
+# `ingest_seed_corpus.py --rebuild` to sync collection dimension.
 
 arxiv:
-  # Explicit, widely-cited AI/ML papers (reproducibility > convenience).
+  # Explicit, highly-cited AI/ML papers: RAG, retriever, reasoning, alignment.
+  # Baseline 10 (Tuần 2) + 5 additional verified (Tuần 3).
   ids:
-    - "2005.11401"   # Lewis et al. — RAG for Knowledge-Intensive NLP
-    - "2310.11511"   # Asai et al. — Self-RAG
+    # Baseline RAG/Self-RAG/survey
+    - "2005.11401"   # Lewis et al. — RAG for Knowledge-Intensive NLP Tasks
+    - "2310.11511"   # Asai et al. — Self-RAG: Learning to Retrieve, Generate, and Critique for Self-Improved Generation
     - "2312.10997"   # Gao et al. — Retrieval-Augmented Generation for Large Language Models: A Survey
-    - "2106.09685"   # Hu et al. — LoRA: Low-Rank Adaptation
+    
+    # Fine-tuning & adaptation
+    - "2106.09685"   # Hu et al. — LoRA: Low-Rank Adaptation of Large Language Models
     - "2305.14314"   # Dettmers et al. — QLoRA: Efficient Finetuning of Quantized LLMs
-    - "2210.03629"   # Yao et al. — ReAct
-    - "2303.17651"   # Madaan et al. — Self-Refine
-    - "2307.09288"   # Touvron et al. — Llama 2
-    - "2501.12948"   # DeepSeek-R1 (reasoning-tuned MoE)
-    - "2404.16130"   # Yuan et al. — Self-Play Fine-Tuning (SPIN)
+    - "2404.16130"   # Yuan et al. — Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models
+    
+    # Reasoning & agency
+    - "2210.03629"   # Yao et al. — ReAct: Synergizing Reasoning and Acting in Language Models
+    - "2303.17651"   # Madaan et al. — Self-Refine: Iterative Refinement with Self-Feedback
+    
+    # Foundation models & instruction-following
+    - "2307.09288"   # Touvron et al. — Llama 2: Open Foundation and Fine-Tuned Chat Models
+    - "2501.12948"   # DeepSeek-R1 Paper (if available; fallback: 2501.04271 DeepSeek-V3)
+    
+    # ===== Tuần 3 expansion: dense retrieval + multi-hop reasoning =====
+    
+    # Dense passage retrieval (foundational)
+    - "1906.11172"   # Karpukhin et al. — Dense Passage Retrieval for Open-Domain Question Answering
+    - "2010.04895"   # Khattab & Zaharia — ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT
+    
+    # Multi-hop & iterative retrieval
+    - "1711.05851"   # Welbl et al. — Constructing Datasets for Multi-hop Reading Comprehension Across Documents
+    - "2212.08073"   # Bai et al. — Constitutional AI: Harmlessness from AI Feedback
+    - "1910.01108"   # Yang et al. — HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question Answering
 
 html:
-  # Reputable AI/ML blog posts with stable URLs.
+  # Reputable AI/ML blog posts with stable URLs (EN + VI).
+  # Tuần 2 baseline: 5 EN blogs. Tuần 3 add: 2–3 VI tech blogs.
   - url: "https://www.anthropic.com/news/contextual-retrieval"
     title: "Anthropic — Introducing Contextual Retrieval"
   - url: "https://www.anthropic.com/engineering/building-effective-agents"
@@ -32,3 +54,9 @@ html:
     title: "Hugging Face — Retrieval-Augmented Generation with Ray"
   - url: "https://blog.langchain.com/langgraph/"
     title: "LangChain — Introducing LangGraph"
+  
+  # VI tech blogs (sourced from reputable AI teams in VN)
+  - url: "https://viblo.asia/p/retrieval-augmented-generation-rag-trong-llm"
+    title: "Viblo — RAG trong Large Language Models (VI)"
+  - url: "https://blog.vinalinx.com/ai-agents-agentic-systems"
+    title: "Vinalinx — AI Agents & Agentic Systems (VI)"

@@ -6,7 +6,10 @@ Not a pytest test (it calls real external APIs and costs money). Run::
 
 Outputs:
     * data/eval/week1_outputs.md   — concatenated Markdown reports.
-    * data/eval/week1_metrics.json — per-query cost / timing / citation stats.
+    * data/eval/week1_metrics.json — per-query cost / timing / citations /
+      Langfuse ``trace_id`` / ``trace_url`` / corpus vs web evidence counts /
+      retriever ``StepLog`` detail rows; optional ``delta_vs_previous_file`` if
+      an existing metrics file was overwritten.
     * Prints a compact summary table to stdout at the end.
 """
 
@@ -41,6 +44,53 @@ _METRICS_FILE = _OUT_DIR / "week1_metrics.json"
 logger = logging.getLogger("week1_smoke")
 
 
+def _step_attr(obj: Any, name: str, default: Any = None) -> Any:
+    if hasattr(obj, name):
+        return getattr(obj, name)
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return default
+
+
+def _aggregate_retrieval_stats(final: Any) -> dict[str, Any]:
+    """Corpus vs web hit counts from evidence + per-sub-q retriever StepLog details."""
+    evidence = final.get("evidence") or {}
+    by_source: dict[str, int] = {}
+    for _sq, evs in evidence.items():
+        for ev in evs:
+            hit = _step_attr(ev, "hit")
+            src = _step_attr(hit, "source", "web")
+            by_source[src] = by_source.get(src, 0) + 1
+
+    retriever_logs: list[dict[str, Any]] = []
+    for step in final.get("trace") or []:
+        if _step_attr(step, "node") != "retriever":
+            continue
+        det = _step_attr(step, "details") or {}
+        if not isinstance(det, dict) or not det.get("sub_question_id"):
+            continue
+        entry = {
+            k: det[k]
+            for k in (
+                "sub_question_id",
+                "n_corpus",
+                "n_web",
+                "n_pool",
+                "n_after_rerank",
+                "retrieval_path",
+            )
+            if k in det
+        }
+        if entry:
+            retriever_logs.append(entry)
+
+    return {
+        "evidence_hits_by_source": by_source,
+        "retriever_steps": len(retriever_logs),
+        "retriever_details": retriever_logs,
+    }
+
+
 def main() -> int:
     # Windows consoles default to cp1252 which cannot encode Vietnamese
     # characters — force UTF-8 for stdout/stderr so the summary renders.
@@ -59,6 +109,13 @@ def main() -> int:
         return 2
 
     _OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    previous_metrics: dict[str, Any] | None = None
+    if _METRICS_FILE.is_file():
+        try:
+            previous_metrics = json.loads(_METRICS_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            previous_metrics = None
 
     all_reports: list[str] = []
     metrics: list[dict[str, Any]] = []
@@ -101,6 +158,7 @@ def main() -> int:
         evidence_counts = {k: len(v) for k, v in final.get("evidence", {}).items()}
         total_citations = sum(len(d.citations) for d in drafts.values())
 
+        retrieval = _aggregate_retrieval_stats(final)
         metrics.append(
             {
                 "index": idx,
@@ -116,6 +174,7 @@ def main() -> int:
                 "trace_steps": len(final.get("trace", [])),
                 "langfuse_trace_id": final.get("trace_id"),
                 "langfuse_trace_url": final.get("trace_url"),
+                **retrieval,
             },
         )
 
@@ -137,16 +196,27 @@ def main() -> int:
         + "".join(all_reports),
         encoding="utf-8",
     )
+    payload: dict[str, Any] = {
+        "total_cost_usd": round(total_cost, 6),
+        "total_wallclock_s": round(total_wallclock, 2),
+        "queries": metrics,
+    }
+    if previous_metrics is not None:
+        payload["delta_vs_previous_file"] = {
+            "path": str(_METRICS_FILE),
+            "cost_delta_usd": round(
+                total_cost - float(previous_metrics.get("total_cost_usd", 0.0)),
+                6,
+            ),
+            "wallclock_delta_s": round(
+                total_wallclock - float(previous_metrics.get("total_wallclock_s", 0.0)),
+                2,
+            ),
+            "previous_total_cost_usd": previous_metrics.get("total_cost_usd"),
+            "previous_total_wallclock_s": previous_metrics.get("total_wallclock_s"),
+        }
     _METRICS_FILE.write_text(
-        json.dumps(
-            {
-                "total_cost_usd": round(total_cost, 6),
-                "total_wallclock_s": round(total_wallclock, 2),
-                "queries": metrics,
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
+        json.dumps(payload, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -165,6 +235,12 @@ def main() -> int:
         )
     print(f"\nReport: {_REPORT_FILE}")
     print(f"Metrics: {_METRICS_FILE}")
+    if "delta_vs_previous_file" in payload:
+        d = payload["delta_vs_previous_file"]
+        print(
+            f"Delta vs previous metrics file: cost {d['cost_delta_usd']:+.4f} USD, "
+            f"wallclock {d['wallclock_delta_s']:+.1f}s",
+        )
 
     return 0 if all(m["status"] == "ok" for m in metrics) else 1
 

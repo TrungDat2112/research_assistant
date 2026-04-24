@@ -6,14 +6,14 @@
   "chunk_overlap_tokens": 50,
   "collection": "ai_ml_corpus_v1",
   "chroma_persist_dir": "D:\\research-assistant\\data\\chroma",
-  "docs_fetched": 15,
-  "docs_failed": 0,
-  "chunks_indexed": 819,
+  "docs_fetched": 20,
+  "docs_failed": 2,
+  "chunks_indexed": 1006,
   "timings_sec": {
-    "fetch": 27.75,
-    "chunk": 85.76,
-    "embed": 1742.84,
-    "upsert": 6.43
+    "fetch": 31.37,
+    "chunk": 49.85,
+    "embed": 1833.93,
+    "upsert": 1.98
   },
   "sources": [
     {
@@ -52,6 +52,13 @@
       "chars": 87819
     },
     {
+      "source_id": "2404.16130v2",
+      "doc_type": "arxiv",
+      "title": "From Local to Global: A Graph RAG Approach to Query-Focused Summarization",
+      "url": "http://arxiv.org/abs/2404.16130v2",
+      "chars": 89607
+    },
+    {
       "source_id": "2210.03629v3",
       "doc_type": "arxiv",
       "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
@@ -80,11 +87,39 @@
       "chars": 229507
     },
     {
-      "source_id": "2404.16130v2",
+      "source_id": "1906.11172v1",
       "doc_type": "arxiv",
-      "title": "From Local to Global: A Graph RAG Approach to Query-Focused Summarization",
-      "url": "http://arxiv.org/abs/2404.16130v2",
-      "chars": 89607
+      "title": "Learning Data Augmentation Strategies for Object Detection",
+      "url": "http://arxiv.org/abs/1906.11172v1",
+      "chars": 44193
+    },
+    {
+      "source_id": "2010.04895v2",
+      "doc_type": "arxiv",
+      "title": "UniNet: Scalable Network Representation Learning with Metropolis-Hastings Sampling",
+      "url": "http://arxiv.org/abs/2010.04895v2",
+      "chars": 71118
+    },
+    {
+      "source_id": "1711.05851v2",
+      "doc_type": "arxiv",
+      "title": "Go for a Walk and Arrive at the Answer: Reasoning Over Paths in Knowledge Bases using Reinforcement Learning",
+      "url": "http://arxiv.org/abs/1711.05851v2",
+      "chars": 60483
+    },
+    {
+      "source_id": "2212.08073v1",
+      "doc_type": "arxiv",
+      "title": "Constitutional AI: Harmlessness from AI Feedback",
+      "url": "http://arxiv.org/abs/2212.08073v1",
+      "chars": 118847
+    },
+    {
+      "source_id": "1910.01108v4",
+      "doc_type": "arxiv",
+      "title": "DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter",
+      "url": "http://arxiv.org/abs/1910.01108v4",
+      "chars": 18527
     },
     {
       "source_id": "h_a9cde9583a70d78b",
@@ -122,5 +157,14 @@
       "chars": 11154
     }
   ],
-  "failures": []
+  "failures": [
+    {
+      "id": "html:https://viblo.asia/p/retrieval-augmented-generation-rag-trong-llm",
+      "reason": "Fetch failed for https://viblo.asia/p/retrieval-augmented-generation-rag-trong-llm"
+    },
+    {
+      "id": "html:https://blog.vinalinx.com/ai-agents-agentic-systems",
+      "reason": "Fetch failed for https://blog.vinalinx.com/ai-agents-agentic-systems"
+    }
+  ]
 }

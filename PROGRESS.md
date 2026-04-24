@@ -7,9 +7,11 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 2 — RAG + graph + rerank + Critic; default embedding bge-m3 (ADR-018). Tiếp: smoke full / CLI script entry / re-run retrieval eval sau khi ingest xong.`
+**Phase**: `Tuần 2 — RAG + graph + rerank + Critic; default embedding bge-m3 (ADR-018). Tiếp: re-run retrieval eval khi cần; tuần 3 theo PLAN.`
 **Last updated**: 2026-04-23
 **Last session summary**:
+- **Full 5-query smoke re-run** (`scripts/week1_smoke.py`): tổng **$0.7565** · **2429.5s** wallclock · 5/5 ok. So với baseline Tuần 1 trong repo (**$0.1282** · **178.8s**): chênh chủ yếu do **Critic** (thêm structured Sonnet/sub-q) + **hybrid corpus + web + cross-encoder rerank** (CPU ~30–80s/retrieval batch lần đầu) + plan dài hơn (5–7 sub-q thay vì 1–7). Mỗi query có `langfuse_trace_id` / `langfuse_trace_url` trong `week1_metrics.json`. Script ghi thêm **retrieval**: `evidence_hits_by_source` (corpus vs web) + `retriever_details` (`n_corpus`/`n_web`/`retrieval_path`/`n_pool`/`n_after_rerank` per sub-q). **Cảnh báo**: 3/5 lần chạy log `Max iterations reached (8)` (query RAG so với fine-tuning, o3 vs R1, vector DB) — cần tune `max_iterations` hoặc Critic/retry nếu muốn hoàn tất mọi sub-q trước report.
+- **CLI entry**: `[project.scripts]` `research-assistant` → `uv run research-assistant "query"` (vẫn hỗ trợ `python -m research_assistant.cli`).
 - **bge-m3 default** (`config.py` / ADR-018): `embedding_model=BAAI/bge-m3`; chunking tokenizer `model_max_length` nới để PDF dài không cảnh báo 8k; `.env.example` ghi override `bge-small` khi cần lặp nhanh. **Sau khi pull**: chạy `uv run python scripts/ingest_seed_corpus.py --rebuild` để Chroma + `data/eval/ingest_manifest.json` khớp 1024-dim (CPU có thể ~30–60 phút / 819 chunk).
 - **Critic (draft)**: node `critic` sau `synthesizer`; metric đoạn+citation + structured Sonnet; retry → `retriever` + feedback vào synthesizer; `CRITIC_ENABLED=false` trong unit graph tests; ADR-017.
 - **Deps mới** (`pyproject.toml`) *(session trước)*: `chromadb>=0.5.15`, `sentence-transformers>=3.0.0`, `trafilatura>=1.12.0`, `arxiv>=2.1.3`, `pymupdf>=1.24.0`, `pyyaml>=6.0.2`. `uv sync` → 176 packages resolved.
@@ -52,7 +54,7 @@ d:\research-assistant\
 ├── src/research_assistant/
 │   ├── __init__.py               # __version__ = "0.1.0"
 │   ├── config.py                 # pydantic-settings Settings + get_settings()
-│   ├── cli.py                    # argparse entry: python -m research_assistant.cli "query"
+│   ├── cli.py                    # CLI: uv run research-assistant (hoặc python -m research_assistant.cli)
 │   ├── observability.py          # Langfuse shim: @observe / update_span / start_agent_span / flush
 │   ├── agents/
 │   │   ├── _llm.py               # ChatAnthropic wrapper + cost estimator + generation spans
@@ -154,6 +156,42 @@ d:\research-assistant\
 | Tổng chi phí < $1 | ✓ $0.1282 / $10 budget (1.28%) |
 | Có trace | ✓ 4–16 StepLog / query (Langfuse detect qua settings) |
 
+### Việc tiếp theo — Tuần 3 (12 mục chi tiết — Session 15+)
+
+**Context**: Tuần 2 đã hoàn 12 mục nhưng phát hiện 3 issue qua smoke: `max_iterations` chạm, cost +6×, latency +13× do Critic+rerank CPU. Eval set vẫn 30-câu, corpus 15-doc quá hẹp. Tuần 3 sửa stack + mở rộng eval.
+
+**Exit criteria**: 100-câu eval + corpus 30-doc; NDCG@10 ≥ 0.65 (rerank); citation coverage ≥ 80%; 0/5 query chạm max_iterations; cost smoke giảm ≥ 30%.
+
+#### A. Eval foundation (mục 1–4)
+
+1. [ ] **Mở rộng corpus**: `configs/seed_corpus.yaml` thêm ~15 doc (target 30) — DPR, ColBERT, FiD, REPLUG, GraphRAG, RAFT, Constitutional AI; 2–3 blog VI (FPT/Zalo/VinAI); update comment YAML. Re-run `ingest_seed_corpus.py --rebuild`, commit `ingest_manifest.json`.
+
+2. [ ] **Mở rộng retrieval eval**: `data/eval/retrieval_eval_100.json` — 100 câu (70 EN + 30 VI), multi-relevant qrels. Skeleton từ corpus + check manual (hoặc `scripts/expand_retrieval_eval.py` tool).
+
+3. [ ] **Rerank pipeline eval**: `eval/retrieval.py` + `run_retrieval_eval.py --with-rerank` → NDCG@10/MRR/Precision@5 stage-1+cross-encoder. A/B so baseline.
+
+4. [ ] **Citation coverage batch**: `scripts/run_citation_eval.py` → `data/eval/citation_coverage.json` (≥ 80% target). Từ smoke outputs.
+
+#### B. Tinh chỉnh stack (mục 5–7)
+
+5. [ ] **Fix max_iterations**: `max_iterations = max(8, len(plan) * critic_max_attempts)` tính sau planner. ADR-019. Smoke chạm 0/5.
+
+6. [ ] **Prompt caching**: `agents/_llm.py` bật Anthropic caching cho system + corpus context (reuse giữa sub-q). Target giảm cost 30–50%.
+
+7. [ ] **Smoke A/B + re-run**: thêm `--no-rerank`, `--no-critic`, `--max-iterations N` flag. Ghi `max_iterations_reached: bool`. Re-run base + tuned, measure cost delta.
+
+#### C. Đa ngôn ngữ + chất lượng (mục 8–9)
+
+8. [ ] **VI/EN translation rubric**: `scripts/run_language_quality_eval.py` — 5 query VI + 5 EN, judge 4 trục (accuracy, fluency, terminology, citation). Baseline tracking.
+
+9. [ ] **HyDE optional**: `rag/hyde.py` — khi BM25+dense top-1 khó → sinh hypothesis → re-embed. `Settings.hyde_enabled=False` default. Đo trên 100-câu eval.
+
+#### D. Tài liệu (mục 10)
+
+10. [ ] **ADR + docs**: ADR-019 (retry budget), ADR-020 (eval v2), cập nhật `PLAN.md` §10, `PROGRESS.md`.
+
+---
+
 ### Việc tiếp theo — Tuần 2 (session sau)
 1. [x] ~~**Fix**: Planner JSON invalid → structured output~~ (done 2026-04-21, session 4).
 2. [x] ~~**Improve**: Retriever 0-hits fallback ladder~~ (done 2026-04-21, session 4).
@@ -165,8 +203,8 @@ d:\research-assistant\
 8. [x] **Retrieval eval set** — `data/eval/retrieval_eval_30.json` (qrels `source_id`); `eval/metrics.py` + `eval/retrieval.py`; `scripts/run_retrieval_eval.py` (stage-1 hybrid, không rerank). Baseline mẫu (dev, seed 15 doc): mean recall@10/20 ≈ 0.97, mean NDCG@10 ≈ 0.94. ADR-016.
 9. [x] **Critic agent** (draft) — kiểm citation coverage (paragraph `[^N]` metric), structured Sonnet (`critic_v1.jinja`) kiểm sub-question → retry `retriever` hoặc advance; `critic_enabled` tắt cho test. ADR-017.
 10. [x] **Swap sang bge-m3** + hướng dẫn re-embed (`ingest_seed_corpus.py --rebuild`); ADR-018; chunking fix tokenizer dài. *Manifest trong repo cập nhật khi bạn chạy ingest local xong.*
-11. [ ] Chuyển `cli.py` vào `[project.scripts]` để gọi `uv run research-assistant "query"` trực tiếp.
-12. [ ] Re-run full 5-query smoke để đo delta cost/quality sau 2 fix + instrumentation + corpus (expect `trace_id` / `trace_url` + retrieval-hit stats).
+11. [x] Chuyển `cli.py` vào `[project.scripts]` — `uv run research-assistant "query"` (PEP 621 `research-assistant = research_assistant.cli:main`; `python -m research_assistant.cli` vẫn tương đương).
+12. [x] Re-run full 5-query smoke — `data/eval/week1_metrics.json` + `week1_outputs.md` (trace id/url; corpus vs web + retriever step stats; delta so với file metrics cũ khi chạy).
 
 ### Notes / cảnh báo ghi nhớ
 - Haiku 4.5 pricing trong `agents/_llm.py._PRICING_USD_PER_MTOK` đang là ước lượng conservative (input $1 / output $5 per MTok). Cần kiểm lại tại `https://www.anthropic.com/pricing` khi có thời gian và cập nhật nếu lệch > 20%.
@@ -346,6 +384,15 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **Tests**: `test_critic.py`, cập nhật `test_graph` (`CRITIC_ENABLED=false`), `test_agents`, `test_prompts`.
 - **Toolchain**: `ruff` / `mypy strict` / `pytest` **92/92** pass.
 - **Next**: bge-m3 swap, `[project.scripts]` CLI, full smoke 5 query.
+
+### 2026-04-23 — Session 13 (Console script entry)
+- **`pyproject.toml`**: `[project.scripts]` `research-assistant` → `research_assistant.cli:main` — `uv run research-assistant "…"` khớp `prog=` argparse.
+- **`cli.py`**: docstring Usage cập nhật (ưu tiên lệnh script, ghi thêm dạng `-m`).
+
+### 2026-04-23 — Session 14 (Full smoke re-run + retrieval metrics in JSON)
+- **`scripts/week1_smoke.py`**: `_aggregate_retrieval_stats` (evidence `corpus`/`web` + `retriever_details` từ `StepLog`); đọc `week1_metrics.json` cũ trước khi ghi để thêm `delta_vs_previous_file` (cost + wallclock); stdout in một dòng delta.
+- **Chạy thực tế 5 query**: tổng $0.7565 · 2429.5s; mỗi query có `langfuse_trace_id` / `langfuse_trace_url`. 3 query chạm `max_iterations=8` (critic+retry ăn iteration).
+- **Next**: tùy ưu tiên — tăng `max_iterations` hoặc giảm critic retry; hoặc re-run `run_retrieval_eval.py` sau ingest.
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)

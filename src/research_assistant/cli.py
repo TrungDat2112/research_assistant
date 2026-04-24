@@ -2,6 +2,9 @@
 
 Usage::
 
+    uv run research-assistant "Your research question here"
+
+    # Equivalent (module form)
     uv run python -m research_assistant.cli "Your research question here"
 
 Options:

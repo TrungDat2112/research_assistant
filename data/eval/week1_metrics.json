@@ -1,29 +1,91 @@
 {
-  "total_cost_usd": 0.128214,
-  "total_wallclock_s": 178.8,
+  "total_cost_usd": 0.756497,
+  "total_wallclock_s": 2429.52,
   "queries": [
     {
       "index": 1,
       "query": "So sánh LoRA và QLoRA cho fine-tuning LLM năm 2026",
       "language": "vi",
       "status": "ok",
-      "cost_usd": 0.019665,
-      "wallclock_s": 20.18,
-      "n_sub_questions": 1,
-      "n_drafts": 1,
+      "cost_usd": 0.149919,
+      "wallclock_s": 450.76,
+      "n_sub_questions": 6,
+      "n_drafts": 6,
       "evidence_counts": {
-        "sq_1": 5
+        "sq_1": 5,
+        "sq_2": 5,
+        "sq_3": 5,
+        "sq_4": 5,
+        "sq_5": 2,
+        "sq_6": 5
       },
-      "total_citations": 4,
-      "trace_steps": 4
+      "total_citations": 18,
+      "trace_steps": 26,
+      "langfuse_trace_id": "1958cda9727acd39d61a065b9e2825e1",
+      "langfuse_trace_url": "https://cloud.langfuse.com/project/cmo85r1z800cnad07chmi8dt8/traces/1958cda9727acd39d61a065b9e2825e1",
+      "evidence_hits_by_source": {
+        "web": 20,
+        "corpus": 7
+      },
+      "retriever_steps": 6,
+      "retriever_details": [
+        {
+          "sub_question_id": "sq_1",
+          "n_corpus": 2,
+          "n_web": 10,
+          "n_pool": 12,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_2",
+          "n_corpus": 2,
+          "n_web": 7,
+          "n_pool": 9,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_3",
+          "n_corpus": 1,
+          "n_web": 19,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_4",
+          "n_corpus": 1,
+          "n_web": 12,
+          "n_pool": 13,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 1,
+          "n_web": 1,
+          "n_pool": 2,
+          "n_after_rerank": 2,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_6",
+          "n_corpus": 1,
+          "n_web": 19,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        }
+      ]
     },
     {
       "index": 2,
       "query": "Retrieval-Augmented Generation là gì, khi nào nên dùng thay vì fine-tuning?",
       "language": "vi",
       "status": "ok",
-      "cost_usd": 0.027196,
-      "wallclock_s": 37.9,
+      "cost_usd": 0.188562,
+      "wallclock_s": 663.34,
       "n_sub_questions": 5,
       "n_drafts": 5,
       "evidence_counts": {
@@ -33,58 +95,90 @@
         "sq_4": 5,
         "sq_5": 5
       },
-      "total_citations": 17,
-      "trace_steps": 12
+      "total_citations": 16,
+      "trace_steps": 31,
+      "langfuse_trace_id": "0ec0502508587f3044ce0a165a3f7de4",
+      "langfuse_trace_url": "https://cloud.langfuse.com/project/cmo85r1z800cnad07chmi8dt8/traces/0ec0502508587f3044ce0a165a3f7de4",
+      "evidence_hits_by_source": {
+        "web": 18,
+        "corpus": 7
+      },
+      "retriever_steps": 8,
+      "retriever_details": [
+        {
+          "sub_question_id": "sq_1",
+          "n_corpus": 4,
+          "n_web": 16,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_2",
+          "n_corpus": 6,
+          "n_web": 14,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_3",
+          "n_corpus": 2,
+          "n_web": 18,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_3",
+          "n_corpus": 2,
+          "n_web": 18,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_4",
+          "n_corpus": 4,
+          "n_web": 15,
+          "n_pool": 19,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_4",
+          "n_corpus": 4,
+          "n_web": 16,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 3,
+          "n_web": 16,
+          "n_pool": 19,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 3,
+          "n_web": 17,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        }
+      ]
     },
     {
       "index": 3,
       "query": "What are the latest advances in reasoning models like OpenAI o3 and DeepSeek R1 in 2026?",
       "language": "en",
       "status": "ok",
-      "cost_usd": 0.026257,
-      "wallclock_s": 39.71,
+      "cost_usd": 0.13872,
+      "wallclock_s": 449.52,
       "n_sub_questions": 6,
-      "n_drafts": 6,
-      "evidence_counts": {
-        "sq_1": 5,
-        "sq_2": 5,
-        "sq_3": 5,
-        "sq_4": 5,
-        "sq_5": 0,
-        "sq_6": 5
-      },
-      "total_citations": 16,
-      "trace_steps": 14
-    },
-    {
-      "index": 4,
-      "query": "Compare vector databases: Qdrant vs Weaviate vs Milvus for production RAG",
-      "language": "en",
-      "status": "ok",
-      "cost_usd": 0.030302,
-      "wallclock_s": 43.96,
-      "n_sub_questions": 7,
-      "n_drafts": 7,
-      "evidence_counts": {
-        "sq_1": 5,
-        "sq_2": 5,
-        "sq_3": 5,
-        "sq_4": 1,
-        "sq_5": 0,
-        "sq_6": 0,
-        "sq_7": 5
-      },
-      "total_citations": 15,
-      "trace_steps": 16
-    },
-    {
-      "index": 5,
-      "query": "What is Agentic RAG and how does it differ from traditional RAG?",
-      "language": "en",
-      "status": "ok",
-      "cost_usd": 0.024794,
-      "wallclock_s": 37.06,
-      "n_sub_questions": 5,
       "n_drafts": 5,
       "evidence_counts": {
         "sq_1": 5,
@@ -94,7 +188,255 @@
         "sq_5": 5
       },
       "total_citations": 19,
-      "trace_steps": 12
+      "trace_steps": 31,
+      "langfuse_trace_id": "95a1ace2abc30fc4e13531a00bb6b0b8",
+      "langfuse_trace_url": "https://cloud.langfuse.com/project/cmo85r1z800cnad07chmi8dt8/traces/95a1ace2abc30fc4e13531a00bb6b0b8",
+      "evidence_hits_by_source": {
+        "web": 24,
+        "corpus": 1
+      },
+      "retriever_steps": 8,
+      "retriever_details": [
+        {
+          "sub_question_id": "sq_1",
+          "n_corpus": 3,
+          "n_web": 17,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_2",
+          "n_corpus": 1,
+          "n_web": 13,
+          "n_pool": 14,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_3",
+          "n_corpus": 5,
+          "n_web": 14,
+          "n_pool": 19,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_3",
+          "n_corpus": 5,
+          "n_web": 13,
+          "n_pool": 18,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_4",
+          "n_corpus": 1,
+          "n_web": 18,
+          "n_pool": 19,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_4",
+          "n_corpus": 1,
+          "n_web": 16,
+          "n_pool": 17,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 1,
+          "n_web": 18,
+          "n_pool": 19,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 1,
+          "n_web": 18,
+          "n_pool": 19,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "query": "Compare vector databases: Qdrant vs Weaviate vs Milvus for production RAG",
+      "language": "en",
+      "status": "ok",
+      "cost_usd": 0.170486,
+      "wallclock_s": 587.65,
+      "n_sub_questions": 7,
+      "n_drafts": 6,
+      "evidence_counts": {
+        "sq_1": 5,
+        "sq_2": 5,
+        "sq_3": 5,
+        "sq_4": 5,
+        "sq_5": 5,
+        "sq_6": 5
+      },
+      "total_citations": 21,
+      "trace_steps": 32,
+      "langfuse_trace_id": "7ee2df72876586c89eaff9915919b466",
+      "langfuse_trace_url": "https://cloud.langfuse.com/project/cmo85r1z800cnad07chmi8dt8/traces/7ee2df72876586c89eaff9915919b466",
+      "evidence_hits_by_source": {
+        "web": 27,
+        "corpus": 3
+      },
+      "retriever_steps": 8,
+      "retriever_details": [
+        {
+          "sub_question_id": "sq_1",
+          "n_corpus": 7,
+          "n_web": 12,
+          "n_pool": 19,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_2",
+          "n_corpus": 5,
+          "n_web": 14,
+          "n_pool": 19,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_3",
+          "n_corpus": 6,
+          "n_web": 14,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_4",
+          "n_corpus": 4,
+          "n_web": 16,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 8,
+          "n_web": 12,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 8,
+          "n_web": 12,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_6",
+          "n_corpus": 8,
+          "n_web": 12,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_6",
+          "n_corpus": 8,
+          "n_web": 12,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "query": "What is Agentic RAG and how does it differ from traditional RAG?",
+      "language": "en",
+      "status": "ok",
+      "cost_usd": 0.10881,
+      "wallclock_s": 278.25,
+      "n_sub_questions": 5,
+      "n_drafts": 5,
+      "evidence_counts": {
+        "sq_1": 5,
+        "sq_2": 5,
+        "sq_3": 5,
+        "sq_4": 5,
+        "sq_5": 5
+      },
+      "total_citations": 22,
+      "trace_steps": 25,
+      "langfuse_trace_id": "579fb076779afed23d3f620fcaa20a53",
+      "langfuse_trace_url": "https://cloud.langfuse.com/project/cmo85r1z800cnad07chmi8dt8/traces/579fb076779afed23d3f620fcaa20a53",
+      "evidence_hits_by_source": {
+        "web": 25
+      },
+      "retriever_steps": 6,
+      "retriever_details": [
+        {
+          "sub_question_id": "sq_1",
+          "n_corpus": 6,
+          "n_web": 14,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_2",
+          "n_corpus": 5,
+          "n_web": 15,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_3",
+          "n_corpus": 6,
+          "n_web": 14,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_4",
+          "n_corpus": 7,
+          "n_web": 13,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 6,
+          "n_web": 14,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        },
+        {
+          "sub_question_id": "sq_5",
+          "n_corpus": 6,
+          "n_web": 14,
+          "n_pool": 20,
+          "n_after_rerank": 5,
+          "retrieval_path": "corpus_then_web"
+        }
+      ]
     }
-  ]
+  ],
+  "delta_vs_previous_file": {
+    "path": "D:\\research-assistant\\data\\eval\\week1_metrics.json",
+    "cost_delta_usd": 0.628283,
+    "wallclock_delta_s": 2250.72,
+    "previous_total_cost_usd": 0.128214,
+    "previous_total_wallclock_s": 178.8
+  }
 }
