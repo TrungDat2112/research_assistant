@@ -273,6 +273,19 @@
 
 ---
 
+## ADR-021: Retrieval eval 100 câu — EN/VI + multi-gold `relevant_source_ids`
+
+- **Ngày**: 2026-04-24
+- **Trạng thái**: Accepted
+- **Context**: PLAN §10 Tuần 3 yêu cầu mở rộng eval lên 100 câu và hỗ trợ tiếng Việt (ADR-007/018, bge-m3). ADR-016 giữ bộ 30 câu EN một gold; cần schema mở rộng mà không phá `run_hybrid_retrieval_eval` (đã dùng `set` gold).
+- **Quyết định**:
+  - **`data/eval/retrieval_eval_100.json`**: `version: 2`, 100 câu — **q01–q70** tiếng Anh, **q71–q100** tiếng Việt; mỗi item có `language` ∈ `{en, vi}`; `relevant_source_ids` là list **1–3** `source_id` (multi-relevant: recall = |gold ∩ top-k| / |gold|, NDCG@10 = binary từng rank như cũ).
+  - Nguồn q01–q30 = bộ cũ + `language: en`; q31–q100 thêm câu hỏi từ manifest corpus (20 nguồn đã ingest). Regenerate/validate: **`scripts/expand_retrieval_eval.py --write`** (chặn ghi nếu `source_id` không có trong `ingest_manifest.json`).
+  - Bộ 30 câu (`retrieval_eval_30.json`) **giữ** cho regression/So sánh; loader Pydantic thêm `language` default `"en"` cho file cũ.
+- **Hệ quả**: Cần cập nhật qrels khi đổi/expand corpus; VI queries trỏ tới chunk EN trong Chroma (đo khả năng đa ngôn ngữ retriever, không bắt buộc doc VI). Một số arXiv id mới (object detection, UniNet, …) đúng theo bản tải thực tế, không theo tên ưu tư — query viết theo nội dung sách.
+
+---
+
 ## ADR-017: Critic agent (draft) — deterministic paragraph citation + Sonnet structured verdict
 
 - **Ngày**: 2026-04-23

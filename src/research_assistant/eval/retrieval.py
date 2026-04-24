@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from statistics import fmean
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -21,6 +21,7 @@ from research_assistant.rag.vector_store import ChromaStore
 class RetrievalEvalItem(BaseModel):
     id: str
     query: str
+    language: Literal["en", "vi"] = "en"
     relevant_source_ids: list[str] = Field(min_length=1)
 
 
@@ -32,7 +33,7 @@ class RetrievalEvalFile(BaseModel):
 
 
 def load_retrieval_eval(path: Path) -> list[RetrievalEvalItem]:
-    """Parse ``retrieval_eval_30.json`` (or compatible)."""
+    """Parse ``retrieval_eval_30.json`` / ``retrieval_eval_100.json`` (or compatible)."""
     raw = path.read_text(encoding="utf-8")
     data = json.loads(raw)
     payload = RetrievalEvalFile.model_validate(data)

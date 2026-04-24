@@ -1,10 +1,11 @@
-"""Run stage-1 hybrid retrieval metrics on data/eval/retrieval_eval_30.json.
+"""Run stage-1 hybrid retrieval metrics on data/eval/retrieval_eval_100.json.
 
 Requires an ingested Chroma store (``scripts/ingest_seed_corpus.py``).
 
 Usage::
 
     uv run python scripts/run_retrieval_eval.py
+    uv run python scripts/run_retrieval_eval.py --eval-file data/eval/retrieval_eval_30.json
     uv run python scripts/run_retrieval_eval.py --out data/eval/retrieval_eval_results.json
 """
 
@@ -28,7 +29,7 @@ from research_assistant.tools.vector_search import clear_vector_search_cache
 logger = logging.getLogger(__name__)
 
 _REPO = Path(__file__).resolve().parents[1]
-_DEFAULT_EVAL = _REPO / "data" / "eval" / "retrieval_eval_30.json"
+_DEFAULT_EVAL = _REPO / "data" / "eval" / "retrieval_eval_100.json"
 
 
 def _setup_logging() -> None:
@@ -72,8 +73,7 @@ def main() -> int:
         return 2
 
     items = load_retrieval_eval(args.eval_file)
-    if len(items) != 30:
-        logger.warning("Expected 30 items, got %d", len(items))
+    logger.info("Loaded %d eval items from %s", len(items), args.eval_file)
 
     clear_vector_search_cache()
     store = ChromaStore(s.chroma_persist_dir, s.corpus_collection)

@@ -7,9 +7,10 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 2 — RAG + graph + rerank + Critic; default embedding bge-m3 (ADR-018). Tiếp: re-run retrieval eval khi cần; tuần 3 theo PLAN.`
-**Last updated**: 2026-04-23
+**Phase**: `RAG + eval scale-up: corpus 20 doc / 1006 chunks; retrieval eval 100 câu (ADR-021). Tiếp: rerank-stage eval + citation batch (PLAN).`
+**Last updated**: 2026-04-24
 **Last session summary**:
+- **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
 - **Full 5-query smoke re-run** (`scripts/week1_smoke.py`): tổng **$0.7565** · **2429.5s** wallclock · 5/5 ok. So với baseline Tuần 1 trong repo (**$0.1282** · **178.8s**): chênh chủ yếu do **Critic** (thêm structured Sonnet/sub-q) + **hybrid corpus + web + cross-encoder rerank** (CPU ~30–80s/retrieval batch lần đầu) + plan dài hơn (5–7 sub-q thay vì 1–7). Mỗi query có `langfuse_trace_id` / `langfuse_trace_url` trong `week1_metrics.json`. Script ghi thêm **retrieval**: `evidence_hits_by_source` (corpus vs web) + `retriever_details` (`n_corpus`/`n_web`/`retrieval_path`/`n_pool`/`n_after_rerank` per sub-q). **Cảnh báo**: 3/5 lần chạy log `Max iterations reached (8)` (query RAG so với fine-tuning, o3 vs R1, vector DB) — cần tune `max_iterations` hoặc Critic/retry nếu muốn hoàn tất mọi sub-q trước report.
 - **CLI entry**: `[project.scripts]` `research-assistant` → `uv run research-assistant "query"` (vẫn hỗ trợ `python -m research_assistant.cli`).
 - **bge-m3 default** (`config.py` / ADR-018): `embedding_model=BAAI/bge-m3`; chunking tokenizer `model_max_length` nới để PDF dài không cảnh báo 8k; `.env.example` ghi override `bge-small` khi cần lặp nhanh. **Sau khi pull**: chạy `uv run python scripts/ingest_seed_corpus.py --rebuild` để Chroma + `data/eval/ingest_manifest.json` khớp 1024-dim (CPU có thể ~30–60 phút / 819 chunk).
@@ -112,17 +113,19 @@ d:\research-assistant\
 ├── scripts/
 │   ├── week1_smoke.py
 │   ├── ingest_seed_corpus.py     # fetch → chunk → embed → upsert + manifest
-│   └── run_retrieval_eval.py     # Recall@10/20, NDCG@10 on retrieval_eval_30.json
+│   ├── run_retrieval_eval.py     # Recall@10/20, NDCG@10 (default: retrieval_eval_100.json)
+│   └── expand_retrieval_eval.py  # build/validate retrieval_eval_100.json from manifest
 ├── data/
 │   ├── chroma/                   # (gitignored) Chroma PersistentClient store
 │   ├── raw/arxiv/                # (gitignored) cached arXiv PDFs
 │   └── eval/
 │       ├── week1_outputs.md
 │       ├── week1_metrics.json
-│       ├── ingest_manifest.json  # sau ingest: 15 docs / ~819 chunks / bge-m3 1024-dim (rebuild bắt buộc khi đổi model)
-│       └── retrieval_eval_30.json  # 30 qrels (source_id)
+│       ├── ingest_manifest.json  # sau ingest: xem file (chunks / bge-m3) — rebuild khi đổi model
+│       ├── retrieval_eval_30.json  # 30 qrels legacy (EN, single-gold)
+│       └── retrieval_eval_100.json  # 100 qrels: 70 EN + 30 VI, multi-gold
 ├── configs/
-│   └── seed_corpus.yaml          # 10 arXiv + 5 blogs
+│   └── seed_corpus.yaml          # arXiv + HTML blogs (see file; expand when eval grows)
 └── notebooks/                    # (empty)
 ```
 
@@ -164,9 +167,10 @@ d:\research-assistant\
 
 #### A. Eval foundation (mục 1–4)
 
-1. [ ] **Mở rộng corpus**: `configs/seed_corpus.yaml` thêm ~15 doc (target 30) — DPR, ColBERT, FiD, REPLUG, GraphRAG, RAFT, Constitutional AI; 2–3 blog VI (FPT/Zalo/VinAI); update comment YAML. Re-run `ingest_seed_corpus.py --rebuild`, commit `ingest_manifest.json`.
+1. [x] **Mở rộng corpus**: `configs/seed_corpus.yaml` thêm ~15 doc (target 30) — DPR, ColBERT, FiD, REPLUG, GraphRAG, RAFT, Constitutional AI; 2–3 blog VI (FPT/Zalo/VinAI); update comment YAML. Re-run `ingest_seed_corpus.py --rebuild`, commit `ingest_manifest.json`. 
+   - **Result (2026-04-24)**: 20/22 docs fetched (15 arXiv + 5 HTML), 2 VI blogs failed (DNS/404 — acceptable). **1006 chunks** (1024-dim bge-m3, up from 766). Embedding ~30 phút CPU. Manifest ghi manifest mới.
 
-2. [ ] **Mở rộng retrieval eval**: `data/eval/retrieval_eval_100.json` — 100 câu (70 EN + 30 VI), multi-relevant qrels. Skeleton từ corpus + check manual (hoặc `scripts/expand_retrieval_eval.py` tool).
+2. [x] **Mở rộng retrieval eval**: `data/eval/retrieval_eval_100.json` (70 EN + 30 VI, multi-gold) + `RetrievalEvalItem.language`; `scripts/expand_retrieval_eval.py` (`--write` validate qrels, `--skeleton` từ manifest). ADR-021. `run_retrieval_eval.py` mặc định dùng file 100 câu.
 
 3. [ ] **Rerank pipeline eval**: `eval/retrieval.py` + `run_retrieval_eval.py --with-rerank` → NDCG@10/MRR/Precision@5 stage-1+cross-encoder. A/B so baseline.
 
@@ -188,7 +192,7 @@ d:\research-assistant\
 
 #### D. Tài liệu (mục 10)
 
-10. [ ] **ADR + docs**: ADR-019 (retry budget), ADR-020 (eval v2), cập nhật `PLAN.md` §10, `PROGRESS.md`.
+10. [ ] **ADR + docs**: ADR-019 (retry budget), ADR-020 nếu cần bổ sung; ADR-021 (retrieval 100) ✓; cập nhật `PLAN.md` §10, `PROGRESS.md`.
 
 ---
 
@@ -393,6 +397,19 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`scripts/week1_smoke.py`**: `_aggregate_retrieval_stats` (evidence `corpus`/`web` + `retriever_details` từ `StepLog`); đọc `week1_metrics.json` cũ trước khi ghi để thêm `delta_vs_previous_file` (cost + wallclock); stdout in một dòng delta.
 - **Chạy thực tế 5 query**: tổng $0.7565 · 2429.5s; mỗi query có `langfuse_trace_id` / `langfuse_trace_url`. 3 query chạm `max_iterations=8` (critic+retry ăn iteration).
 - **Next**: tùy ưu tiên — tăng `max_iterations` hoặc giảm critic retry; hoặc re-run `run_retrieval_eval.py` sau ingest.
+
+### 2026-04-24 — Session 15 (Tuần 3 planning + corpus mục 1)
+- **PROGRESS.md**: ghi 12 mục Tuần 3 chi tiết (A–D: eval foundation, stack tuning, language, docs).
+- **mục 1 — Corpus expand**: `seed_corpus.yaml` thêm 5 arXiv (DPR, ColBERT, HotpotQA, Constitutional AI, multi-hop) + 2 VI blogs (failed). Rebuild → 1006 chunks (bge-m3), 1917s total embed. Commit thành công.
+- **Next**: mục 2–4 (retrieval eval 100 câu, rerank pipeline, citation batch).
+
+### 2026-04-24 — Session 16 (Retrieval eval 100 + expand script)
+- **`data/eval/retrieval_eval_100.json`**: q01–q70 EN, q71–q100 VI; multi-`relevant_source_ids`; validate với `ingest_manifest.json`.
+- **`scripts/expand_retrieval_eval.py`**: `--write` / `--skeleton`; ADR-021.
+- **`eval/retrieval.py`**: `RetrievalEvalItem.language` (mặc định `en` cho `retrieval_eval_30.json`).
+- **`run_retrieval_eval.py`**: default eval file → `retrieval_eval_100.json`.
+- **Tests**: `test_retrieval_load` cập nhật cho 100 + legacy 30.
+- **Next**: mục 3 (rerank pipeline eval).
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)
