@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "generated_at": "2026-04-24T12:33:48.002403Z",
+  "metric": "paragraph_citation_coverage",
+  "smoke_markdown": "D:/research-assistant/data/eval/week1_outputs.md",
+  "n_queries": 5,
+  "target_mean_coverage": 0.8,
+  "mean_coverage": 0.967949,
+  "meets_target": true,
+  "queries": [
+    {
+      "query_index": 1,
+      "language": "vi",
+      "title": "So sánh LoRA và QLoRA cho fine-tuning LLM năm 2026",
+      "paragraph_citation_coverage": 1.0,
+      "substantive_paragraphs": 10,
+      "cited_paragraphs": 10
+    },
+    {
+      "query_index": 2,
+      "language": "vi",
+      "title": "Retrieval-Augmented Generation là gì, khi nào nên dùng thay vì fine-tuning?",
+      "paragraph_citation_coverage": 0.916667,
+      "substantive_paragraphs": 12,
+      "cited_paragraphs": 11
+    },
+    {
+      "query_index": 3,
+      "language": "en",
+      "title": "What are the latest advances in reasoning models like OpenAI o3 and DeepSeek R1 in 2026?",
+      "paragraph_citation_coverage": 0.923077,
+      "substantive_paragraphs": 13,
+      "cited_paragraphs": 12
+    },
+    {
+      "query_index": 4,
+      "language": "en",
+      "title": "Compare vector databases: Qdrant vs Weaviate vs Milvus for production RAG",
+      "paragraph_citation_coverage": 1.0,
+      "substantive_paragraphs": 14,
+      "cited_paragraphs": 14
+    },
+    {
+      "query_index": 5,
+      "language": "en",
+      "title": "What is Agentic RAG and how does it differ from traditional RAG?",
+      "paragraph_citation_coverage": 1.0,
+      "substantive_paragraphs": 15,
+      "cited_paragraphs": 15
+    }
+  ]
+}

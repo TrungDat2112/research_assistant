@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import Callable
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -43,17 +44,29 @@ def _is_insufficient_fallback(text: str) -> bool:
     )
 
 
-def paragraph_citation_coverage(text: str) -> float:
-    """Share of substantive paragraphs that contain at least one ``[^N]`` marker.
+def paragraph_citation_stats(
+    text: str,
+    *,
+    skip_paragraph: Callable[[str], bool] | None = None,
+    apply_full_body_insufficient_guard: bool = True,
+) -> tuple[float, int, int]:
+    """Share of substantive paragraphs with ``[^N]`` plus counts.
 
-    Returns ``1.0`` for empty text, explicit insufficient-evidence bodies, or
-    when no substantive paragraphs are detected (short answers).
+    Returns ``(1.0, 0, 0)`` for empty text, explicit insufficient-evidence
+    bodies, or when no substantive paragraphs remain after filtering.
+
+    ``skip_paragraph`` may exclude paragraphs (e.g. Markdown headings) from
+    both numerator and denominator.
+
+    When ``apply_full_body_insufficient_guard`` is False, the draft is never
+    short-circuited as insufficient-only (used for stitched multi-section
+    reports where some sections disclaim lack of evidence).
     """
     raw = text.strip()
     if not raw:
-        return 1.0
-    if _is_insufficient_fallback(raw):
-        return 1.0
+        return (1.0, 0, 0)
+    if apply_full_body_insufficient_guard and _is_insufficient_fallback(raw):
+        return (1.0, 0, 0)
 
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
     if not paragraphs:
@@ -62,6 +75,8 @@ def paragraph_citation_coverage(text: str) -> float:
     cited = 0
     total = 0
     for p in paragraphs:
+        if skip_paragraph is not None and skip_paragraph(p):
+            continue
         if len(p) < 24:
             continue
         total += 1
@@ -69,8 +84,17 @@ def paragraph_citation_coverage(text: str) -> float:
             cited += 1
 
     if total == 0:
-        return 1.0
-    return cited / total
+        return (1.0, 0, 0)
+    return (cited / total, cited, total)
+
+
+def paragraph_citation_coverage(text: str) -> float:
+    """Share of substantive paragraphs that contain at least one ``[^N]`` marker.
+
+    Returns ``1.0`` for empty text, explicit insufficient-evidence bodies, or
+    when no substantive paragraphs are detected (short answers).
+    """
+    return paragraph_citation_stats(text)[0]
 
 
 class _CritiqueDraft(BaseModel):

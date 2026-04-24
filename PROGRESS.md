@@ -7,7 +7,7 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `RAG + eval scale-up: corpus 20 doc / 1006 chunks; retrieval eval 100 câu (ADR-021). Tiếp: rerank-stage eval + citation batch (PLAN).`
+**Phase**: `RAG + eval scale-up: corpus 20 doc / 1006 chunks; retrieval 100 + rerank A/B (ADR-021/022). Citation batch smoke → citation_coverage.json. Tiếp: max_iterations / prompt cache / smoke flags (PLAN Tuần 3 B).`
 **Last updated**: 2026-04-24
 **Last session summary**:
 - **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
@@ -115,6 +115,7 @@ d:\research-assistant\
 │   ├── week1_smoke.py
 │   ├── ingest_seed_corpus.py     # fetch → chunk → embed → upsert + manifest
 │   ├── run_retrieval_eval.py     # Recall@10/20, NDCG@10 (default: retrieval_eval_100.json)
+│   ├── run_citation_eval.py      # smoke MD → citation_coverage.json (paragraph [^N] coverage)
 │   └── expand_retrieval_eval.py  # build/validate retrieval_eval_100.json from manifest
 ├── data/
 │   ├── chroma/                   # (gitignored) Chroma PersistentClient store
@@ -124,7 +125,8 @@ d:\research-assistant\
 │       ├── week1_metrics.json
 │       ├── ingest_manifest.json  # sau ingest: xem file (chunks / bge-m3) — rebuild khi đổi model
 │       ├── retrieval_eval_30.json  # 30 qrels legacy (EN, single-gold)
-│       └── retrieval_eval_100.json  # 100 qrels: 70 EN + 30 VI, multi-gold
+│       ├── retrieval_eval_100.json  # 100 qrels: 70 EN + 30 VI, multi-gold
+│       └── citation_coverage.json  # smoke batch: mean paragraph citation coverage
 ├── configs/
 │   └── seed_corpus.yaml          # arXiv + HTML blogs (see file; expand when eval grows)
 └── notebooks/                    # (empty)
@@ -175,7 +177,8 @@ d:\research-assistant\
 
 3. [x] **Rerank pipeline eval**: `run_rerank_retrieval_eval` + `iter_source_ids_reranked` (`eval/retrieval.py`); `rerank_hybrid_results` (`rag/reranker.py`); metrics thêm MRR + `precision@5` (`eval/metrics.py`). `run_retrieval_eval.py --with-rerank [--candidate-pool 50]` so sánh A với B; output JSON gồm `ab_delta`. ADR-022.
 
-4. [ ] **Citation coverage batch**: `scripts/run_citation_eval.py` → `data/eval/citation_coverage.json` (≥ 80% target). Từ smoke outputs.
+4. [x] **Citation coverage batch**: `scripts/run_citation_eval.py` → `data/eval/citation_coverage.json` (≥ 80% target). Từ smoke outputs.
+   - **Result (2026-04-24)**: `week1_outputs.md` → mean **96.8%** (Q2 91.7%, Q3 92.3%, còn lại 100%); `paragraph_citation_stats` + skip tiêu đề smoke; `apply_full_body_insufficient_guard=False` cho báo cáo ghép nhiều mục. ADR-023.
 
 #### B. Tinh chỉnh stack (mục 5–7)
 
@@ -418,6 +421,14 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`eval/retrieval.py`**: `iter_source_ids_reranked`, `run_rerank_retrieval_eval`.
 - **`scripts/run_retrieval_eval.py`**: `--with-rerank`, `--candidate-pool`, in A/B + `ab_delta`.
 - **Next**: mục 4 (citation coverage batch).
+
+### 2026-04-24 — Session 18 (Citation coverage batch)
+- **`paragraph_citation_stats`** (`agents/critic.py`): tham số `apply_full_body_insufficient_guard` (mặc định giữ hành vi Critic); `skip_paragraph` giữ nguyên.
+- **`eval/smoke_citation.py`**: parse `# Query N (VI|EN):`, tách body (bỏ plan + References), skip heading/placeholder/đoạn disclaimer; gọi stats với guard tắt.
+- **`scripts/run_citation_eval.py`**: `--smoke-md`, `--out`, `--target-mean`, `--strict-exit`.
+- **Chạy**: `week1_outputs.md` → mean coverage **0.968**, `meets_target` ✓ (target 0.8).
+- **Tests**: `test_smoke_citation.py`, mở rộng `test_critic.py`.
+- **Next**: Tuần 3 mục 5–7 (max_iterations, prompt cache, smoke flags).
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)

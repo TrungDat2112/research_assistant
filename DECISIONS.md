@@ -300,6 +300,20 @@
 
 ---
 
+## ADR-023: Citation coverage batch — smoke Markdown + paragraph `[^N]` metric
+
+- **Ngày**: 2026-04-24
+- **Trạng thái**: Accepted
+- **Context**: Tuần 3 (PROGRESS) cần đo citation coverage trên output thật, tái sử dụng heuristic Critic (ADR-017) thay vì LLM judge mới.
+- **Quyết định**:
+  - **Nguồn**: `data/eval/week1_outputs.md` (concat từ `week1_smoke.py`), CLI `scripts/run_citation_eval.py` → `data/eval/citation_coverage.json`.
+  - **Metric**: cùng lõi ``paragraph_citation_stats`` (đoạn ≥24 ký tự, ≥1 marker ``[^N]``); đoạn disclaimer “insufficient” / “Chưa đủ dữ liệu” / “No synthesized answer” và tiêu đề Markdown (``## n.``, heading-only, một dòng **bold** tiêu đề) **bỏ qua** khỏi tử số/mẫu số.
+  - **Báo cáo ghép nhiều mục**: tắt ``apply_full_body_insufficient_guard`` — không coi cả file là “insufficient” chỉ vì một đoạn chứa cụm disclaimer (tránh mean sai 100%).
+  - **Target Tuần 3**: mean coverage ≥ **0.8** trên 5 query smoke (exit 1 tùy chọn ``--strict-exit``).
+- **Hệ quả**: Số liệu phụ thuộc format reporter; đổi template báo cáo có thể cần chỉnh skip rules trong ``eval/smoke_citation.py``.
+
+---
+
 ## ADR-017: Critic agent (draft) — deterministic paragraph citation + Sonnet structured verdict
 
 - **Ngày**: 2026-04-23
