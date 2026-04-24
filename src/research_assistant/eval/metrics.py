@@ -32,6 +32,29 @@ def ndcg_at_k(relevances: list[int], k: int) -> float:
     return d / idcg if idcg > 0 else 0.0
 
 
+def reciprocal_rank_first_relevant(
+    ranked_source_ids: list[_T],
+    gold_source_ids: set[_T],
+) -> float:
+    """MRR-style: reciprocal of 1-based rank of the first chunk whose source is in ``gold``."""
+    for i, sid in enumerate(ranked_source_ids):
+        if sid in gold_source_ids:
+            return 1.0 / float(i + 1)
+    return 0.0
+
+
+def precision_at_k(
+    ranked_source_ids: list[_T],
+    gold_source_ids: set[_T],
+    k: int,
+) -> float:
+    """Fraction of the first ``k`` ranked chunk positions that are relevant (binary per chunk)."""
+    if k <= 0:
+        return 0.0
+    head = ranked_source_ids[:k]
+    return sum(1 for s in head if s in gold_source_ids) / float(k)
+
+
 def source_recall_in_top_k(
     ranked_source_ids: list[_T],
     gold_source_ids: set[_T],
@@ -52,14 +75,21 @@ def per_query_metrics(
     ranked_source_ids: list[str],
     gold_source_ids: set[str],
     k_list: tuple[int, ...] = (10, 20),
+    *,
+    precision_ks: tuple[int, ...] = (5,),
 ) -> dict[str, float]:
-    """Compute recall@k and NDCG@10 (from first-10 relevances) for one query."""
+    """Compute recall@k, NDCG@10, MRR, and precision@k (default *k*=5) for one query."""
     k_max = max(k_list) if k_list else 10
-    rels = [1 if s in gold_source_ids else 0 for s in ranked_source_ids[:k_max]]
-    while len(rels) < k_max:
+    pk_max = max(precision_ks, default=0)
+    need = max(k_max, pk_max, 10)
+    rels = [1 if s in gold_source_ids else 0 for s in ranked_source_ids[:need]]
+    while len(rels) < need:
         rels.append(0)
     rels_10 = rels[:10]
-    out: dict[str, float] = {"ndcg@10": ndcg_at_k(rels_10, 10)}
+    out: dict[str, float] = {
+        "ndcg@10": ndcg_at_k(rels_10, 10),
+        "mrr": reciprocal_rank_first_relevant(ranked_source_ids, gold_source_ids),
+    }
     for k in k_list:
         if k > 0:
             out[f"recall@{k}"] = source_recall_in_top_k(
@@ -67,4 +97,7 @@ def per_query_metrics(
                 gold_source_ids,
                 k,
             )
+    for pk in precision_ks:
+        if pk > 0:
+            out[f"precision@{pk}"] = precision_at_k(ranked_source_ids, gold_source_ids, pk)
     return out

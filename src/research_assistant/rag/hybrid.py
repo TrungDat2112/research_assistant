@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from research_assistant.graph.state import SearchHit
 from research_assistant.rag.bm25_index import BM25CorpusIndex
 from research_assistant.rag.vector_store import ChromaStore, SearchResult
 
@@ -131,3 +132,25 @@ def hybrid_search_stage1(
             ),
         )
     return out
+
+
+def hybrid_result_to_search_hit(r: HybridSearchResult) -> SearchHit:
+    """Map a fused hybrid row to :class:`~research_assistant.graph.state.SearchHit` for re-ranking."""
+    from pydantic import HttpUrl, TypeAdapter
+
+    meta = r.metadata
+    url_s = str(meta.get("source_url") or "").strip()
+    if not url_s:
+        url_s = "https://example.invalid/missing-source-url"
+    title = str(meta.get("title") or meta.get("source_id") or "Untitled")
+    snippet = r.body if len(r.body) <= 1600 else f"{r.body[:1600]}…"
+    published = str(meta.get("published_date") or "").strip()
+    return SearchHit(
+        url=TypeAdapter(HttpUrl).validate_python(url_s),
+        title=title,
+        snippet=snippet,
+        score=r.combined_score,
+        published_date=published or None,
+        source="corpus",
+        raw_content=r.body,
+    )

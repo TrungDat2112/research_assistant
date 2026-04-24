@@ -286,6 +286,20 @@
 
 ---
 
+## ADR-022: Re-rank trong offline retrieval eval — cùng macro metric + A/B
+
+- **Ngày**: 2026-04-24
+- **Trạng thái**: Accepted
+- **Context**: Cần đo NDCG@10 / MRR / Precision@5 sau cross-encoder (ADR-015) cạnh stage-1 hybrid (ADR-014) trên cùng eval set.
+- **Quyết định**:
+  - **A (baseline)**: :func:`run_hybrid_retrieval_eval` — top-``final_top_k`` từ ``hybrid_search_stage1`` (50/50 dense+BM25).
+  - **B (re-rank)**: pool ``candidate_pool`` (CLI mặc định 50) từ cùng fusion → ``rerank_hybrid_results`` (``BAAI/bge-reranker-v2-m3``) → cắt ``final_top_k`` (thường 20) — khớp production retriever.
+  - **MRR** = nghịch đẫu hạng chunk đầu tiên có ``source_id`` ∈ gold; **P@5** = tỷ lệ vị trí 1..5 thuộc gold (cấp **chunk** như NDCG).
+  - **CLI**: ``run_retrieval_eval.py --with-rerank`` in hai block + ``ab_delta`` (B−A) trong JSON.
+- **Hệ quả**: 100 query × CE chậm trên CPU; `--with-rerank` tắt mặc định.
+
+---
+
 ## ADR-017: Critic agent (draft) — deterministic paragraph citation + Sonnet structured verdict
 
 - **Ngày**: 2026-04-23

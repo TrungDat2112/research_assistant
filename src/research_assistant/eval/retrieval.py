@@ -1,4 +1,4 @@
-"""Load the Week-2 retrieval eval set and run stage-1 hybrid search metrics."""
+"""Load retrieval eval JSON and run stage-1 hybrid and optional re-rank metrics."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from research_assistant.eval.metrics import per_query_metrics
 from research_assistant.rag.bm25_index import BM25CorpusIndex
 from research_assistant.rag.embedding import EmbeddingModel
 from research_assistant.rag.hybrid import hybrid_search_stage1
+from research_assistant.rag.reranker import rerank_hybrid_results
 from research_assistant.rag.vector_store import ChromaStore
 
 
@@ -65,6 +66,41 @@ def iter_source_ids(
     return [str(h.metadata.get("source_id", "")).strip() for h in hits]
 
 
+def iter_source_ids_reranked(
+    store: ChromaStore,
+    bm25_index: BM25CorpusIndex,
+    embedder: EmbeddingModel,
+    query: str,
+    *,
+    final_top_k: int = 20,
+    query_vec: NDArray[np.float32] | None = None,
+    where: dict[str, Any] | None = None,
+    candidate_pool: int = 20,
+    cross_encoder: Any | None = None,
+) -> list[str]:
+    """Stage-1 hybrid pool (``candidate_pool``) then cross-encoder re-rank to ``final_top_k``."""
+    if final_top_k > candidate_pool:
+        raise ValueError("final_top_k must be <= candidate_pool for re-rank eval")
+    qvec = embedder.embed_query(query) if query_vec is None else query_vec
+    pool = hybrid_search_stage1(
+        store,
+        bm25_index,
+        query,
+        qvec,
+        dense_top_k=50,
+        bm25_top_k=50,
+        final_top_k=candidate_pool,
+        where=where,
+    )
+    reranked = rerank_hybrid_results(
+        query,
+        pool,
+        top_k=final_top_k,
+        cross_encoder=cross_encoder,
+    )
+    return [str(h.metadata.get("source_id", "")).strip() for h in reranked]
+
+
 def run_hybrid_retrieval_eval(
     *,
     store: ChromaStore,
@@ -96,11 +132,72 @@ def run_hybrid_retrieval_eval(
         return {"n": 0, "error": "no items", "per_query": []}
 
     ndcgs = [float(p["ndcg@10"]) for p in per_query]
+    mrrs = [float(p["mrr"]) for p in per_query]
+    precs5 = [float(p["precision@5"]) for p in per_query]
     out: dict[str, Any] = {
         "n": n,
+        "mode": "stage1_hybrid",
         "final_top_k": final_top_k,
         "k_recall": list(k_recall),
         "mean_ndcg@10": fmean(ndcgs),
+        "mean_mrr": fmean(mrrs),
+        "mean_precision@5": fmean(precs5),
+        "per_query": per_query,
+    }
+    for k in k_recall:
+        rk = f"recall@{k}"
+        out[f"mean_{rk}"] = fmean([float(p[rk]) for p in per_query])
+    return out
+
+
+def run_rerank_retrieval_eval(
+    *,
+    store: ChromaStore,
+    bm25_index: BM25CorpusIndex,
+    embedder: EmbeddingModel,
+    items: list[RetrievalEvalItem],
+    candidate_pool: int = 20,
+    final_top_k: int = 20,
+    k_recall: tuple[int, ...] = (10, 20),
+    cross_encoder: Any | None = None,
+) -> dict[str, Any]:
+    """Same metrics as :func:`run_hybrid_retrieval_eval` after cross-encoder re-ordering."""
+    if final_top_k < max(k_recall, default=10):
+        raise ValueError("final_top_k must be >= max(k_recall)")
+    if final_top_k > candidate_pool:
+        raise ValueError("final_top_k must be <= candidate_pool")
+
+    per_query: list[dict[str, Any]] = []
+    for it in items:
+        gold: set[str] = set(it.relevant_source_ids)
+        ranked = iter_source_ids_reranked(
+            store,
+            bm25_index,
+            embedder,
+            it.query,
+            final_top_k=final_top_k,
+            candidate_pool=candidate_pool,
+            cross_encoder=cross_encoder,
+        )
+        m = per_query_metrics(ranked, gold, k_list=k_recall)
+        per_query.append({"id": it.id, **m})
+
+    n = len(per_query)
+    if n == 0:
+        return {"n": 0, "error": "no items", "per_query": []}
+
+    ndcgs = [float(p["ndcg@10"]) for p in per_query]
+    mrrs = [float(p["mrr"]) for p in per_query]
+    precs5 = [float(p["precision@5"]) for p in per_query]
+    out: dict[str, Any] = {
+        "n": n,
+        "mode": "stage1_hybrid_rerank",
+        "candidate_pool": candidate_pool,
+        "final_top_k": final_top_k,
+        "k_recall": list(k_recall),
+        "mean_ndcg@10": fmean(ndcgs),
+        "mean_mrr": fmean(mrrs),
+        "mean_precision@5": fmean(precs5),
         "per_query": per_query,
     }
     for k in k_recall:

@@ -10,6 +10,8 @@ from research_assistant.eval.metrics import (
     dcg_at_k,
     ndcg_at_k,
     per_query_metrics,
+    precision_at_k,
+    reciprocal_rank_first_relevant,
     source_recall_in_top_k,
 )
 
@@ -44,6 +46,13 @@ def test_source_recall() -> None:
     assert source_recall_in_top_k(ranked, gold, 2) == 0.0
 
 
+def test_mrr_and_precision() -> None:
+    ranked = ["a", "b", "c", "gold", "d"]
+    gold = {"gold", "x"}
+    assert reciprocal_rank_first_relevant(ranked, gold) == pytest.approx(1.0 / 4.0)
+    assert precision_at_k(ranked, gold, 5) == pytest.approx(0.2)
+
+
 def test_per_query_metrics() -> None:
     ranked = [f"s{i}" for i in range(1, 21)]
     gold = {"s3"}
@@ -51,3 +60,6 @@ def test_per_query_metrics() -> None:
     assert m["recall@10"] == 1.0  # s3 in position 2 (index 1)
     assert m["recall@20"] == 1.0
     assert 0.0 < m["ndcg@10"] <= 1.0
+    assert m["mrr"] == pytest.approx(1.0 / 3.0)
+    # Top 5: s1..s5 -> one relevant (s3)
+    assert m["precision@5"] == pytest.approx(0.2)

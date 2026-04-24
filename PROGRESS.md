@@ -11,6 +11,7 @@
 **Last updated**: 2026-04-24
 **Last session summary**:
 - **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
+- **Rerank eval**: `run_retrieval_eval.py --with-rerank` — so sánh stage-1 vs pool+`bge-reranker-v2-m3`; thêm MRR, precision@5; `ab_delta` trong JSON output.
 - **Full 5-query smoke re-run** (`scripts/week1_smoke.py`): tổng **$0.7565** · **2429.5s** wallclock · 5/5 ok. So với baseline Tuần 1 trong repo (**$0.1282** · **178.8s**): chênh chủ yếu do **Critic** (thêm structured Sonnet/sub-q) + **hybrid corpus + web + cross-encoder rerank** (CPU ~30–80s/retrieval batch lần đầu) + plan dài hơn (5–7 sub-q thay vì 1–7). Mỗi query có `langfuse_trace_id` / `langfuse_trace_url` trong `week1_metrics.json`. Script ghi thêm **retrieval**: `evidence_hits_by_source` (corpus vs web) + `retriever_details` (`n_corpus`/`n_web`/`retrieval_path`/`n_pool`/`n_after_rerank` per sub-q). **Cảnh báo**: 3/5 lần chạy log `Max iterations reached (8)` (query RAG so với fine-tuning, o3 vs R1, vector DB) — cần tune `max_iterations` hoặc Critic/retry nếu muốn hoàn tất mọi sub-q trước report.
 - **CLI entry**: `[project.scripts]` `research-assistant` → `uv run research-assistant "query"` (vẫn hỗ trợ `python -m research_assistant.cli`).
 - **bge-m3 default** (`config.py` / ADR-018): `embedding_model=BAAI/bge-m3`; chunking tokenizer `model_max_length` nới để PDF dài không cảnh báo 8k; `.env.example` ghi override `bge-small` khi cần lặp nhanh. **Sau khi pull**: chạy `uv run python scripts/ingest_seed_corpus.py --rebuild` để Chroma + `data/eval/ingest_manifest.json` khớp 1024-dim (CPU có thể ~30–60 phút / 819 chunk).
@@ -172,7 +173,7 @@ d:\research-assistant\
 
 2. [x] **Mở rộng retrieval eval**: `data/eval/retrieval_eval_100.json` (70 EN + 30 VI, multi-gold) + `RetrievalEvalItem.language`; `scripts/expand_retrieval_eval.py` (`--write` validate qrels, `--skeleton` từ manifest). ADR-021. `run_retrieval_eval.py` mặc định dùng file 100 câu.
 
-3. [ ] **Rerank pipeline eval**: `eval/retrieval.py` + `run_retrieval_eval.py --with-rerank` → NDCG@10/MRR/Precision@5 stage-1+cross-encoder. A/B so baseline.
+3. [x] **Rerank pipeline eval**: `run_rerank_retrieval_eval` + `iter_source_ids_reranked` (`eval/retrieval.py`); `rerank_hybrid_results` (`rag/reranker.py`); metrics thêm MRR + `precision@5` (`eval/metrics.py`). `run_retrieval_eval.py --with-rerank [--candidate-pool 50]` so sánh A với B; output JSON gồm `ab_delta`. ADR-022.
 
 4. [ ] **Citation coverage batch**: `scripts/run_citation_eval.py` → `data/eval/citation_coverage.json` (≥ 80% target). Từ smoke outputs.
 
@@ -409,7 +410,14 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`eval/retrieval.py`**: `RetrievalEvalItem.language` (mặc định `en` cho `retrieval_eval_30.json`).
 - **`run_retrieval_eval.py`**: default eval file → `retrieval_eval_100.json`.
 - **Tests**: `test_retrieval_load` cập nhật cho 100 + legacy 30.
-- **Next**: mục 3 (rerank pipeline eval).
+
+### 2026-04-24 — Session 17 (Rerank pipeline eval + MRR/P@5)
+- **`eval/metrics.py`**: `reciprocal_rank_first_relevant`, `precision_at_k`; `per_query_metrics` thêm `mrr`, `precision@5`.
+- **`rag/hybrid.py`**: `hybrid_result_to_search_hit` (dùng chung với `vector_search`).
+- **`rag/reranker.py`**: `rerank_hybrid_results` → trả `HybridSearchResult` cho eval.
+- **`eval/retrieval.py`**: `iter_source_ids_reranked`, `run_rerank_retrieval_eval`.
+- **`scripts/run_retrieval_eval.py`**: `--with-rerank`, `--candidate-pool`, in A/B + `ab_delta`.
+- **Next**: mục 4 (citation coverage batch).
 
 <!-- Khi kết thúc session, thêm entry mới theo format:
 ### YYYY-MM-DD — Session N (Tên phase)

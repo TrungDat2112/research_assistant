@@ -9,7 +9,12 @@ import pytest
 
 from research_assistant.config import get_settings
 from research_assistant.graph.state import SearchHit
-from research_assistant.rag.reranker import _passage_for_rerank, rerank_search_hits
+from research_assistant.rag.hybrid import HybridSearchResult
+from research_assistant.rag.reranker import (
+    _passage_for_rerank,
+    rerank_hybrid_results,
+    rerank_search_hits,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -67,3 +72,27 @@ def test_rerank_single_hit_sets_score() -> None:
     assert len(out) == 1
     assert out[0].score == pytest.approx(1.0)
     assert mock_ce.predict.call_count == 0
+
+
+def _hr(chunk_id: str, url: str, body: str, sid: str = "s1") -> HybridSearchResult:
+    return HybridSearchResult(
+        chunk_id=chunk_id,
+        body=body,
+        metadata={"source_id": sid, "source_url": url, "title": "T"},
+        dense_distance=0.1,
+        combined_score=0.5,
+        dense_norm=0.5,
+        bm25_norm=0.5,
+    )
+
+
+def test_rerank_hybrid_reorders_by_cross_encoder() -> None:
+    a = _hr("c1", "https://a.example", "low " * 30, "src_a")
+    b = _hr("c2", "https://b.example", "high " * 30, "src_b")
+    c = _hr("c3", "https://c.example", "mid " * 30, "src_c")
+    mock_ce = MagicMock()
+    mock_ce.predict = MagicMock(return_value=np.array([0.1, 0.99, 0.5], dtype=np.float32))
+    out = rerank_hybrid_results("q", [a, b, c], top_k=2, cross_encoder=mock_ce)
+    assert [x.chunk_id for x in out] == ["c2", "c3"]
+    assert out[0].metadata.get("source_id") == "src_b"
+    assert mock_ce.predict.call_count == 1
