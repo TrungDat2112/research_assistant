@@ -72,6 +72,17 @@ VectorSearchFn = Callable[..., list[SearchHit]]
 RerankFn = Callable[[str, list[SearchHit]], list[SearchHit]]
 
 
+def no_cross_encoder_rerank_fn() -> RerankFn:
+    """Stage-1 order only: take first ``synthesizer_evidence_top_k`` merged hits (no CE)."""
+
+    def _go(query: str, hits: list[SearchHit]) -> list[SearchHit]:
+        _ = query
+        k = get_settings().synthesizer_evidence_top_k
+        return hits[:k]
+
+    return _go
+
+
 def _default_rerank_fn() -> RerankFn:
     """Stage-2 cross-encoder, or pass-through when ``reranker_enabled`` is off."""
 
@@ -392,6 +403,7 @@ def run_research(
     vector_search_fn: VectorSearchFn | None = None,
     rerank_fn: RerankFn | None = None,
     retrieval_candidate_pool: int | None = None,
+    critic_enabled_override: bool | None = None,
     flush_langfuse: bool = True,
 ) -> ResearchState:
     """High-level entry point used by CLI / Streamlit / smoke scripts.
@@ -402,8 +414,9 @@ def run_research(
     top-level trace, fragmenting the timeline.
 
     Parameters mirror :func:`graph.state.new_state` plus injectable
-    ``search_fn`` / ``vector_search_fn`` / ``rerank_fn`` for tests. Returns
-    the final :class:`ResearchState`.
+    ``search_fn`` / ``vector_search_fn`` / ``rerank_fn`` for tests,
+    optional ``critic_enabled_override`` (``False`` = skip Critic LLM for this
+    run). Returns the final :class:`ResearchState`.
     """
     settings = get_settings()
     initial = new_state(
@@ -414,6 +427,8 @@ def run_research(
             per_query_cap_usd if per_query_cap_usd is not None else settings.per_query_cap_usd
         ),
     )
+    if critic_enabled_override is not None:
+        initial["critic_enabled_override"] = critic_enabled_override
 
     # Capture Langfuse trace identifiers from THIS agent span (we are
     # inside ``@observe(as_type="agent")``). Doing it here rather than
@@ -444,6 +459,7 @@ def run_research(
             "total_cost_usd": round(final.get("total_cost_usd", 0.0), 6),
             "report_chars": len(final.get("final_report") or ""),
             "iterations": final.get("iterations", 0),
+            "max_iterations_reached": bool(final.get("max_iterations_reached", False)),
         },
     )
 

@@ -169,6 +169,9 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
     draft = state.get("drafts", {}).get(sub_q.id)
     evidence_list = list(state.get("evidence", {}).get(sub_q.id, []))
 
+    override = state.get("critic_enabled_override")
+    critic_on = settings.critic_enabled if override is None else override
+
     if draft is None:
         return {
             "critic_route_next": "tick",
@@ -185,7 +188,7 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
             ],
         }
 
-    if not settings.critic_enabled:
+    if not critic_on:
         critique = Critique(
             sub_question_id=sub_q.id,
             passed=True,
@@ -234,18 +237,23 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
     cap = state.get("per_query_cap_usd")
 
     try:
-        prompt = render(
-            "critic_v1.jinja",
+        system = render("critic_system_v1.jinja")
+        cacheable_prefix = render(
+            "critic_user_prefix_v1.jinja",
             user_query=state.get("query", ""),
+        )
+        user_rest = render(
+            "critic_user_rest_v1.jinja",
             sub_question=sub_q,
             draft=draft,
             evidence=evidence_list,
             paragraph_citation_coverage=round(det_cov, 4),
-            output_language=state.get("output_language", "vi"),
         )
         llm_draft, result = invoke_structured_llm(
             model=settings.anthropic_planner_model,
-            prompt=prompt,
+            prompt=user_rest,
+            system=system,
+            cacheable_user_prefix=cacheable_prefix,
             schema=_CritiqueDraft,
             temperature=0.0,
             max_tokens=768,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from research_assistant.config import Settings, get_settings
+from research_assistant.config import Settings, get_settings, planned_max_iterations
 
 
 @pytest.fixture(autouse=True)
@@ -49,3 +49,10 @@ def test_credentials_flip_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_per_query_cap_must_be_positive() -> None:
     with pytest.raises(ValueError):
         Settings(_env_file=None, per_query_cap_usd=0.0)  # type: ignore[call-arg]
+
+
+def test_planned_max_iterations_floor_eight() -> None:
+    assert planned_max_iterations(1, 2) == 8
+    assert planned_max_iterations(3, 2) == 8
+    assert planned_max_iterations(5, 2) == 10
+    assert planned_max_iterations(7, 2) == 14

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any, TypeVar, cast
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from research_assistant.config import get_settings
@@ -26,6 +26,8 @@ from research_assistant.observability import observe, update_generation
 _SchemaT = TypeVar("_SchemaT", bound=BaseModel)
 
 logger = logging.getLogger(__name__)
+
+_EPHEMERAL_CACHE_CONTROL: dict[str, str] = {"type": "ephemeral"}
 
 
 # (input_usd_per_mtok, output_usd_per_mtok)
@@ -154,6 +156,75 @@ def _normalise_text(content: Any) -> str:
     return str(content)
 
 
+def _use_prompt_cache(explicit: bool | None) -> bool:
+    if explicit is not None:
+        return explicit
+    return get_settings().anthropic_prompt_cache_enabled
+
+
+def build_lc_messages(
+    *,
+    system: str | None,
+    user_text: str,
+    cacheable_user_prefix: str | None = None,
+    use_prompt_cache: bool | None = None,
+) -> list[BaseMessage]:
+    """Build LangChain messages for Anthropic, optional ephemeral cache breakpoints.
+
+    Caches the **system** block and an optional **user** prefix (same research
+    query repeated on every Critic call). Variable evidence + sub-question tail
+    stays in the second user text block so it is not read from cache.
+    """
+    use_cache = _use_prompt_cache(use_prompt_cache)
+    out: list[BaseMessage] = []
+    if system:
+        if use_cache:
+            out.append(
+                SystemMessage(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": system,
+                            "cache_control": _EPHEMERAL_CACHE_CONTROL,
+                        },
+                    ],
+                ),
+            )
+        else:
+            out.append(SystemMessage(content=system))
+
+    prefix = (cacheable_user_prefix or "").strip()
+    if prefix and use_cache:
+        out.append(
+            HumanMessage(
+                content=[
+                    {
+                        "type": "text",
+                        "text": cacheable_user_prefix,
+                        "cache_control": _EPHEMERAL_CACHE_CONTROL,
+                    },
+                    {"type": "text", "text": user_text},
+                ],
+            ),
+        )
+    elif prefix:
+        out.append(HumanMessage(content=f"{cacheable_user_prefix}\n\n{user_text}"))
+    else:
+        out.append(HumanMessage(content=user_text))
+    return out
+
+
+def _budget_prompt_chars(
+    *,
+    system: str | None,
+    user_text: str,
+    cacheable_user_prefix: str | None,
+) -> str:
+    """Concatenate prompt parts for conservative preflight token estimation."""
+    parts = [p for p in (system, cacheable_user_prefix, user_text) if p]
+    return "\n\n".join(parts)
+
+
 @observe(name="anthropic.invoke", as_type="generation", capture_input=False, capture_output=False)
 def invoke_llm(
     model: str,
@@ -162,6 +233,8 @@ def invoke_llm(
     temperature: float = 0.0,
     max_tokens: int = 2048,
     system: str | None = None,
+    cacheable_user_prefix: str | None = None,
+    use_prompt_cache: bool | None = None,
     current_cost_usd: float = 0.0,
     per_query_cap_usd: float | None = None,
 ) -> LLMCallResult:
@@ -175,19 +248,26 @@ def invoke_llm(
     instead of via ``capture_input=True`` to keep secrets/system prompts
     out of default captures if callers pre-redact them.
     """
+    budget_text = _budget_prompt_chars(
+        system=system,
+        user_text=prompt,
+        cacheable_user_prefix=cacheable_user_prefix,
+    )
     _preflight_budget_check(
         model,
-        prompt,
+        budget_text,
         max_tokens=max_tokens,
         current_cost_usd=current_cost_usd,
         per_query_cap_usd=per_query_cap_usd,
     )
 
     chat = build_chat_model(model, temperature=temperature, max_tokens=max_tokens)
-    messages: list[BaseMessage | dict[str, Any]] = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    messages = build_lc_messages(
+        system=system,
+        user_text=prompt,
+        cacheable_user_prefix=cacheable_user_prefix,
+        use_prompt_cache=use_prompt_cache,
+    )
 
     response = chat.invoke(messages)
     tokens_in, tokens_out = _extract_usage(response)
@@ -196,7 +276,12 @@ def invoke_llm(
     text = _normalise_text(response.content)
     update_generation(
         model=model,
-        input={"system": system, "prompt": prompt},
+        input={
+            "system": system,
+            "prompt": prompt,
+            "cacheable_user_prefix": cacheable_user_prefix,
+            "prompt_cache": _use_prompt_cache(use_prompt_cache),
+        },
         output=text,
         usage_details={"input": tokens_in, "output": tokens_out},
         cost_details={"input": cost, "total": cost},
@@ -225,6 +310,8 @@ def invoke_structured_llm(
     temperature: float = 0.0,
     max_tokens: int = 2048,
     system: str | None = None,
+    cacheable_user_prefix: str | None = None,
+    use_prompt_cache: bool | None = None,
     current_cost_usd: float = 0.0,
     per_query_cap_usd: float | None = None,
 ) -> tuple[_SchemaT, LLMCallResult]:
@@ -238,9 +325,14 @@ def invoke_structured_llm(
     ``parsed`` and ``parsing_error`` keys so we can still recover token
     usage (which lives on the raw ``AIMessage``) after parsing.
     """
+    budget_text = _budget_prompt_chars(
+        system=system,
+        user_text=prompt,
+        cacheable_user_prefix=cacheable_user_prefix,
+    )
     _preflight_budget_check(
         model,
-        prompt,
+        budget_text,
         max_tokens=max_tokens,
         current_cost_usd=current_cost_usd,
         per_query_cap_usd=per_query_cap_usd,
@@ -249,10 +341,12 @@ def invoke_structured_llm(
     chat = build_chat_model(model, temperature=temperature, max_tokens=max_tokens)
     structured = chat.with_structured_output(schema, include_raw=True)
 
-    messages: list[BaseMessage | dict[str, Any]] = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    messages = build_lc_messages(
+        system=system,
+        user_text=prompt,
+        cacheable_user_prefix=cacheable_user_prefix,
+        use_prompt_cache=use_prompt_cache,
+    )
 
     response: dict[str, Any] = structured.invoke(messages)  # type: ignore[assignment]
     raw = response.get("raw")
@@ -274,7 +368,13 @@ def invoke_structured_llm(
     parsed_payload: Any = parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
     update_generation(
         model=model,
-        input={"system": system, "prompt": prompt, "schema": schema.__name__},
+        input={
+            "system": system,
+            "prompt": prompt,
+            "schema": schema.__name__,
+            "cacheable_user_prefix": cacheable_user_prefix,
+            "prompt_cache": _use_prompt_cache(use_prompt_cache),
+        },
         output=parsed_payload,
         usage_details={"input": tokens_in, "output": tokens_out},
         cost_details={"input": cost, "total": cost},

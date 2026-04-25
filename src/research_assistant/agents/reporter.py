@@ -113,11 +113,17 @@ def build_report(
 def reporter_node(state: ResearchState) -> dict[str, Any]:
     """LangGraph terminal node — writes ``final_report`` into state."""
     started = time.perf_counter()
+    plan = list(state.get("plan", []))
+    idx = int(state.get("current_sub_question_index", 0))
+    iters = int(state.get("iterations", 0))
+    max_i = int(state.get("max_iterations", 8))
+    max_iterations_reached = iters >= max_i and idx < len(plan)
+
     try:
         report = build_report(
             query=state["query"],
             output_language=state.get("output_language", "vi"),
-            plan=list(state.get("plan", [])),
+            plan=plan,
             drafts=dict(state.get("drafts", {})),
             evidence=dict(state.get("evidence", {})),
             total_cost_usd=state.get("total_cost_usd", 0.0),
@@ -132,18 +138,20 @@ def reporter_node(state: ResearchState) -> dict[str, Any]:
 
     update_span(
         input={
-            "n_plan": len(state.get("plan", [])),
+            "n_plan": len(plan),
             "n_drafts": len(state.get("drafts", {})),
         },
         output={
             "length_chars": len(report),
             "status": status,
+            "max_iterations_reached": max_iterations_reached,
         },
         metadata={"total_cost_usd": round(state.get("total_cost_usd", 0.0), 6)},
     )
 
     return {
         "final_report": report,
+        "max_iterations_reached": max_iterations_reached,
         "trace": [
             StepLog(
                 node="reporter",
@@ -152,6 +160,7 @@ def reporter_node(state: ResearchState) -> dict[str, Any]:
                 details={
                     "length_chars": len(report),
                     "n_drafts": len(state.get("drafts", {})),
+                    "max_iterations_reached": max_iterations_reached,
                 },
             ),
         ],

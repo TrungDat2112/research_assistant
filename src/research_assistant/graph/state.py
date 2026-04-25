@@ -193,6 +193,11 @@ class ResearchState(TypedDict, total=False):
     iterations: int
     max_iterations: int
     current_sub_question_index: int
+    # When True, the graph stopped early because ``iterations`` hit
+    # ``max_iterations`` before every sub-question completed (set in reporter).
+    max_iterations_reached: bool
+    # If set, overrides :attr:`Settings.critic_enabled` for this run only (CLI).
+    critic_enabled_override: bool | None
 
     # Reporting ----------------------------------------------------------
     final_report: str | None
@@ -228,6 +233,8 @@ def new_state(
         iterations=0,
         max_iterations=max_iterations,
         current_sub_question_index=0,
+        max_iterations_reached=False,
+        critic_enabled_override=None,
         final_report=None,
         trace=[],
         total_cost_usd=0.0,

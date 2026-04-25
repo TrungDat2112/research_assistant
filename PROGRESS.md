@@ -7,8 +7,8 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `RAG + eval scale-up: corpus 20 doc / 1006 chunks; retrieval 100 + rerank A/B (ADR-021/022). Citation batch smoke → citation_coverage.json. Tiếp: max_iterations / prompt cache / smoke flags (PLAN Tuần 3 B).`
-**Last updated**: 2026-04-24
+**Phase**: `RAG + eval scale-up: corpus 20 doc / 1006 chunks; retrieval 100 + rerank A/B (ADR-021/022). Smoke flags + A/B metrics (ADR-024). Tiếp: language quality eval / HyDE (Tuần 3 C).`
+**Last updated**: 2026-04-25
 **Last session summary**:
 - **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
 - **Rerank eval**: `run_retrieval_eval.py --with-rerank` — so sánh stage-1 vs pool+`bge-reranker-v2-m3`; thêm MRR, precision@5; `ab_delta` trong JSON output.
@@ -73,8 +73,8 @@ d:\research-assistant\
 │   ├── prompts/
 │   │   ├── loader.py             # Jinja2 Environment + render helper (StrictUndefined)
 │   │   ├── planner_v1.jinja
-│   │   ├── synthesizer_v1.jinja
-│   │   ├── critic_v1.jinja
+│   │   ├── synthesizer_system_v1 / user_v1.jinja (+ legacy synthesizer_v1)
+│   │   ├── critic_system / user_prefix / user_rest_v1.jinja (+ legacy critic_v1)
 │   │   └── reporter_v1.jinja
 │   ├── rag/
 │   │   ├── __init__.py
@@ -182,11 +182,11 @@ d:\research-assistant\
 
 #### B. Tinh chỉnh stack (mục 5–7)
 
-5. [ ] **Fix max_iterations**: `max_iterations = max(8, len(plan) * critic_max_attempts)` tính sau planner. ADR-019. Smoke chạm 0/5.
+5. [x] **Fix max_iterations**: `max_iterations = max(8, len(plan) * critic_max_attempts_per_sub_question)` sau planner; `max(planned, prior)` nếu CLI/env đặt cao hơn. ADR-019.
 
-6. [ ] **Prompt caching**: `agents/_llm.py` bật Anthropic caching cho system + corpus context (reuse giữa sub-q). Target giảm cost 30–50%.
+6. [x] **Prompt caching**: `build_lc_messages` + `cache_control` ephemeral; Synthesizer: system tĩnh + parent query; Critic: system tĩnh + user prefix (query) | phần còn lại. `ANTHROPIC_PROMPT_CACHE_ENABLED`. ADR-020. *(Đo cost thực tế khi re-smoke.)*
 
-7. [ ] **Smoke A/B + re-run**: thêm `--no-rerank`, `--no-critic`, `--max-iterations N` flag. Ghi `max_iterations_reached: bool`. Re-run base + tuned, measure cost delta.
+7. [x] **Smoke A/B + re-run**: CLI `--no-rerank`, `--no-critic`, `--max-iterations N`; state `max_iterations_reached`; `week1_smoke.py --ab` → `ab_compare` + cost delta. ADR-024. *(Chạy `uv run python scripts/week1_smoke.py --ab` khi sẵn API để ghi số liệu thật.)*
 
 #### C. Đa ngôn ngữ + chất lượng (mục 8–9)
 
@@ -196,7 +196,7 @@ d:\research-assistant\
 
 #### D. Tài liệu (mục 10)
 
-10. [ ] **ADR + docs**: ADR-019 (retry budget), ADR-020 nếu cần bổ sung; ADR-021 (retrieval 100) ✓; cập nhật `PLAN.md` §10, `PROGRESS.md`.
+10. [ ] **ADR + docs**: ADR-019 ✓, ADR-020 ✓; ADR-021 (retrieval 100) ✓; cập nhật `PLAN.md` §10, `PROGRESS.md`.
 
 ---
 
@@ -421,6 +421,22 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`eval/retrieval.py`**: `iter_source_ids_reranked`, `run_rerank_retrieval_eval`.
 - **`scripts/run_retrieval_eval.py`**: `--with-rerank`, `--candidate-pool`, in A/B + `ab_delta`.
 - **Next**: mục 4 (citation coverage batch).
+
+### 2026-04-25 — Session 21 (Smoke flags + A/B)
+- **ADR-024**: CLI `--no-rerank` / `--no-critic`; `no_cross_encoder_rerank_fn`; `critic_enabled_override` + planner planned cap khi tắt Critic; reporter ghi `max_iterations_reached`; `week1_smoke.py` argparse, `--ab`, payload `mode` / `run_flags` / `ab_compare`.
+- **Tests**: `test_state`, `test_graph`, `test_agents` (planner cap khi critic off).
+- **Next**: Tuần 3 mục 8–9 (language eval, HyDE).
+
+### 2026-04-24 — Session 20 (ADR-020 prompt caching)
+- **`build_lc_messages`**, `invoke_llm` / `invoke_structured_llm`: `cacheable_user_prefix`, `use_prompt_cache`; Haiku synthesizer + Sonnet critic.
+- **Templates**: `synthesizer_system_v1` / `synthesizer_user_v1`, `critic_system_v1`, `critic_user_prefix_v1`, `critic_user_rest_v1`; legacy `*_v1.jinja` dùng `{% include %}`.
+- **`synthesize_one`**: tham số `user_query`; **`Settings.anthropic_prompt_cache_enabled`**.
+- **Tests**: `test_llm_messages.py`, cập nhật `test_prompts`.
+
+### 2026-04-24 — Session 19 (ADR-019 max_iterations)
+- **`planned_max_iterations`** (`config.py`); **`planner_node`** set `max_iterations` + trace details; `max(prior, planned)` khi user/CLI tăng trần.
+- **`Settings.max_iterations`** `le=64`; `.env.example` ghi chú.
+- **Tests**: `test_graph` patch planner cho case cap=1; `test_agents` + `test_config`; ADR-019 trong `DECISIONS.md`.
 
 ### 2026-04-24 — Session 18 (Citation coverage batch)
 - **`paragraph_citation_stats`** (`agents/critic.py`): tham số `apply_full_body_insufficient_guard` (mặc định giữ hành vi Critic); `skip_paragraph` giữ nguyên.

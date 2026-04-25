@@ -1,0 +1,26 @@
+Sub-question:
+<<<
+{{ sub_question.question }}
+>>>
+
+Sub-question rationale (may be empty):
+<<<
+{{ sub_question.rationale }}
+>>>
+
+Evidence snippets (numbered [1]..[N] in the Synthesizer prompt; citations in
+the draft appear as [^N]):
+{% for ev in evidence %}
+[{{ loop.index }}] {{ ev.hit.title }}
+    URL: {{ ev.hit.url }}
+    Snippet: {{ ev.hit.snippet | trim }}
+
+{% endfor %}
+
+Draft answer:
+<<<
+{{ draft.content }}
+>>>
+
+Deterministic paragraph citation coverage already computed (0–1, higher is
+better): {{ paragraph_citation_coverage }}

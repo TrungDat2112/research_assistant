@@ -23,7 +23,7 @@ from typing import Any, cast
 from pydantic import BaseModel, Field, ValidationError
 
 from research_assistant.agents._llm import LLMCallResult, invoke_structured_llm
-from research_assistant.config import get_settings
+from research_assistant.config import get_settings, planned_max_iterations
 from research_assistant.graph.state import ResearchState, StepLog, SubQuestion
 from research_assistant.observability import (
     current_trace_id,
@@ -191,9 +191,20 @@ def planner_node(state: ResearchState) -> dict[str, Any]:
         cost_delta = 0.0
         result = cast(LLMCallResult, None)  # for type narrowing below
 
+    crit_override = state.get("critic_enabled_override")
+    attempts_per_sq = (
+        1 if crit_override is False else int(settings.critic_max_attempts_per_sub_question)
+    )
+    planned = planned_max_iterations(len(plan), attempts_per_sq)
+    prior_cap = state.get("max_iterations", planned)
+    iter_cap = max(planned, prior_cap)
+    details["planned_max_iterations"] = planned
+    details["max_iterations"] = iter_cap
+
     elapsed_ms = (time.perf_counter() - started) * 1000
     update: dict[str, Any] = {
         "plan": plan,
+        "max_iterations": iter_cap,
         "trace": [
             StepLog(
                 node="planner",
@@ -224,6 +235,8 @@ def planner_node(state: ResearchState) -> dict[str, Any]:
             "n_sub_questions": len(plan),
             "sub_questions": [sq.question for sq in plan],
             "status": status,
+            "max_iterations": iter_cap,
+            "planned_max_iterations": planned,
         },
         metadata={
             "model": model,

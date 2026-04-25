@@ -344,6 +344,48 @@
 
 ---
 
+## ADR-019: Dynamic ``max_iterations`` sau Planner
+
+- **Ngày**: 2026-04-24
+- **Trạng thái**: Accepted
+- **Context**: Smoke 5 query với Critic + retry ăn nhiều bước; ``iterations`` tăng mỗi lần Critic kết thúc (kể cả retry về retriever). Giữ ``max_iterations=8`` cố định khiến plan 6–7 sub-q thường chạm trần trước khi reporter chạy (log “Max iterations reached”).
+- **Quyết định**:
+  - Ngay sau khi có ``plan``, đặt ``max_iterations = max(8, len(plan) * critic_max_attempts_per_sub_question)`` qua hàm ``planned_max_iterations`` trong ``config.py``.
+  - **Trần tối thiểu 8** giữ an toàn cho plan ngắn / fallback 1 sub-q.
+  - **Giữ CLI/env**: nếu ``new_state``/``run_research`` đã truyền ``max_iterations`` lớn hơn (ví dụ ``--max-iterations 32``), dùng ``max(planned, prior)`` để không giảm ngân sách vòng lặp do người dùng chủ động tăng.
+  - Ghi ``planned_max_iterations`` + ``max_iterations`` vào ``StepLog`` chi tiết planner và metadata span.
+- **Hệ quả**: ``Settings.max_iterations`` chỉ là giá trị **trước** planner; sau planner state thường cao hơn (vd. 7×2=14). ``Settings.max_iterations`` ``le`` nâng lên 64 để env không bị chặn khi công thức hoặc override lớn.
+
+---
+
+## ADR-020: Anthropic prompt caching — static system + lặp user query
+
+- **Ngày**: 2026-04-24
+- **Trạng thái**: Accepted
+- **Context**: Tuần 3 (PROGRESS) cần giảm cost 30–50% trên chuỗi sub-question; Anthropic Messages API hỗ trợ ``cache_control: {type: ephemeral}`` trên các khối text lặp lại trong phiên.
+- **Quyết định**:
+  - **Synthesizer (Haiku)**: prompt tách **system** = hướng dẫn tĩnh + **parent research query** (giống mọi sub-q trong một lần chạy graph); **user** = sub-question + feedback + evidence (không cache — thay đổi mỗi sub-q / mỗi lần retrieve).
+  - **Critic (Sonnet)**: **system** = hướng dẫn tĩnh; **user** hai khối — khối 1 cache = ``user_query`` toàn cục; khối 2 = sub-question + evidence + draft + metric.
+  - Triển khai qua ``langchain_core`` ``SystemMessage`` / ``HumanMessage`` với ``content`` dạng list chứa ``cache_control``; ``build_lc_messages`` trong ``agents/_llm.py``. ``Settings.anthropic_prompt_cache_enabled`` (env ``ANTHROPIC_PROMPT_CACHE_ENABLED``), tắt khi debug / provider lỗi.
+  - Preflight budget (``_preflight_budget_check``) vẫn ước lượng **conservative** (full input), không mô hình hoá giá cache read.
+- **Hệ quả**: Tiết kiệm phụ thuộc độ dài prefix cache và tỷ lệ hit; evidence lớn vẫn trả phí mỗi lần. Template legacy ``synthesizer_v1.jinja`` / ``critic_v1.jinja`` giữ dạng ``include`` cho test tương thích.
+
+---
+
+## ADR-024: Smoke A/B flags — CLI + ``max_iterations_reached``
+
+- **Ngày**: 2026-04-25
+- **Trạng thái**: Accepted
+- **Context**: Tuần 3 (PROGRESS) cần tách cost giữa baseline (không rerank CE, không Critic LLM) và stack đầy đủ; đồng thời ghi nhận khi graph dừng vì chạm ``max_iterations`` trước khi hết sub-question.
+- **Quyết định**:
+  - CLI ``research-assistant``: ``--no-rerank`` (``no_cross_encoder_rerank_fn``), ``--no-critic`` (``critic_enabled_override=False`` trong state), giữ ``--max-iterations`` làm sàn trước planner (ADR-019 vẫn nâng trần sau planner).
+  - ``ResearchState.critic_enabled_override``: khi ``False``, Critic auto-pass; planner dùng ``1`` attempt/sub-q cho ``planned_max_iterations`` thay vì ``critic_max_attempts_per_sub_question``.
+  - ``max_iterations_reached``: reporter set ``True`` khi ``iterations >= max_iterations`` và ``current_sub_question_index < len(plan)``.
+  - ``scripts/week1_smoke.py --ab``: chạy lần lượt profile base rồi tuned, JSON ``ab_compare.cost_delta_tuned_minus_base_usd`` (và wallclock).
+- **Hệ quả**: Đo delta cost không cần đổi ``.env``; metrics file có thêm ``mode`` / ``run_flags``.
+
+---
+
 <!-- Template cho entry mới:
 
 ## ADR-NNN: <Tiêu đề ngắn>

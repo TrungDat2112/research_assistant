@@ -1,49 +1,6 @@
-You are a meticulous research quality critic. Evaluate whether the draft
-answer for ONE sub-question is acceptable to finalize, using the user query
-for context, the sub-question as the target, the evidence list, and the
-draft text.
+{# Legacy single-file view for tests; production uses critic_system + critic_user_prefix + critic_user_rest with caching. #}
+{% include "critic_system_v1.jinja" %}
 
-User research query (context only):
-<<<
-{{ user_query }}
->>>
+{% include "critic_user_prefix_v1.jinja" %}
 
-Sub-question:
-<<<
-{{ sub_question.question }}
->>>
-
-Sub-question rationale (may be empty):
-<<<
-{{ sub_question.rationale }}
->>>
-
-Evidence snippets (numbered [1]..[N] in the Synthesizer prompt; citations in
-the draft appear as [^N]):
-{% for ev in evidence %}
-[{{ loop.index }}] {{ ev.hit.title }}
-    URL: {{ ev.hit.url }}
-    Snippet: {{ ev.hit.snippet | trim }}
-
-{% endfor %}
-
-Draft answer:
-<<<
-{{ draft.content }}
->>>
-
-Deterministic paragraph citation coverage already computed (0–1, higher is
-better): {{ paragraph_citation_coverage }}
-
-Instructions:
-1. Decide if the draft **directly answers** the sub-question (not just vaguely
-   related).
-2. Assign **overall_score** 1–5 (5 = excellent).
-3. Set **should_pass** true only if you would ship this draft without another
-   retrieval+synthesis round. When evidence is truly insufficient and the draft
-   states that clearly, passing is OK.
-4. List **issues** (short strings) when something is wrong.
-5. List **suggested_fixes** as imperative bullets the Synthesizer should follow
-   on retry (e.g. "Cite at least one source for the latency claim.").
-
-Output must match the structured schema (no extra prose).
+{% include "critic_user_rest_v1.jinja" %}

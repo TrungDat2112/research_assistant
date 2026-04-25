@@ -10,7 +10,10 @@ Usage::
 Options:
     --language {vi,en}     Output language (default: from .env / vi).
     --out PATH             Write the report to a file in addition to stdout.
-    --max-iterations N     Override MAX_ITERATIONS (default: from .env / 8).
+    --max-iterations N     Floor for iteration cap before planner; planner may
+                           raise it (ADR-019). Default: from .env.
+    --no-rerank            Skip cross-encoder rerank (stage-1 order, top-k slice).
+    --no-critic            Skip Critic LLM (auto-pass; tighter planned cap).
 
 Designed to be non-interactive so it can drive smoke-test scripts.
 """
@@ -25,7 +28,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from research_assistant.config import get_settings
-from research_assistant.graph.research_graph import run_research
+from research_assistant.graph.research_graph import no_cross_encoder_rerank_fn, run_research
 
 logger = logging.getLogger("research_assistant.cli")
 
@@ -59,7 +62,17 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--max-iterations",
         type=int,
         default=None,
-        help="Override MAX_ITERATIONS guardrail for this run.",
+        help="Iteration cap before planner; planner may increase (ADR-019).",
+    )
+    parser.add_argument(
+        "--no-rerank",
+        action="store_true",
+        help="Do not run cross-encoder reranking on retrieval candidates.",
+    )
+    parser.add_argument(
+        "--no-critic",
+        action="store_true",
+        help="Disable Critic agent (no Sonnet critique; auto-pass each sub-question).",
     )
     parser.add_argument(
         "--log-level",
@@ -88,21 +101,27 @@ def run(argv: list[str]) -> int:
     max_iters = args.max_iterations or settings.max_iterations
 
     logger.info("Running graph for query=%r language=%s", args.query, output_language)
+    rerank_fn = no_cross_encoder_rerank_fn() if args.no_rerank else None
+    critic_override = False if args.no_critic else None
+
     final_state = run_research(
         query=args.query,
         output_language=output_language,
         max_iterations=max_iters,
         per_query_cap_usd=settings.per_query_cap_usd,
+        rerank_fn=rerank_fn,
+        critic_enabled_override=critic_override,
     )
 
     report = final_state.get("final_report") or "(empty report)"
     cost = final_state.get("total_cost_usd", 0.0)
     logger.info(
-        "Done. cost=$%.4f trace_steps=%d plan_size=%d trace_id=%s",
+        "Done. cost=$%.4f trace_steps=%d plan_size=%d trace_id=%s max_iter_reached=%s",
         cost,
         len(final_state.get("trace", [])),
         len(final_state.get("plan", [])),
         final_state.get("trace_id") or "-",
+        final_state.get("max_iterations_reached", False),
     )
 
     # On Windows the default stdout codec is often cp1252, which can't

@@ -61,6 +61,7 @@ def synthesize_one(
     sub_question: SubQuestion,
     evidence: list[Evidence],
     *,
+    user_query: str = "",
     output_language: str = "vi",
     critic_feedback: str | None = None,
     current_cost_usd: float = 0.0,
@@ -73,17 +74,22 @@ def synthesize_one(
     settings = get_settings()
     model = settings.anthropic_synthesizer_model
 
-    prompt = render(
-        "synthesizer_v1.jinja",
+    system = render(
+        "synthesizer_system_v1.jinja",
+        user_query=user_query,
+        output_language=output_language,
+    )
+    user_prompt = render(
+        "synthesizer_user_v1.jinja",
         sub_question=sub_question.question,
         evidence=evidence,
-        output_language=output_language,
         critic_feedback=critic_feedback,
     )
 
     result = invoke_llm(
         model=model,
-        prompt=prompt,
+        prompt=user_prompt,
+        system=system,
         temperature=0.1,
         max_tokens=1024,
         current_cost_usd=current_cost_usd,
@@ -171,6 +177,7 @@ def synthesizer_node(state: ResearchState) -> dict[str, Any]:
         draft = synthesize_one(
             sub_q,
             evidence_for_q,
+            user_query=state.get("query", ""),
             output_language=state.get("output_language", "vi"),
             critic_feedback=state.get("synth_critic_feedback"),
             current_cost_usd=current_cost,

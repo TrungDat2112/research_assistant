@@ -9,6 +9,7 @@ import pytest
 from research_assistant.agents._llm import LLMCallResult
 from research_assistant.agents.planner import _PlanDraft, _PlanItemDraft
 from research_assistant.config import get_settings
+from research_assistant.graph import research_graph as rg
 from research_assistant.graph.research_graph import _corpus_then_web_hits, build_graph
 from research_assistant.graph.state import SearchHit, new_state
 
@@ -101,7 +102,7 @@ def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
         rerank_fn=_rerank_take_top5,
         retrieval_candidate_pool=5,
     )
-    initial = new_state("Explain RAG and its trade-offs.", max_iterations=10)
+    initial = new_state("Explain RAG and its trade-offs.")
 
     final: Any = graph.invoke(initial)
 
@@ -113,9 +114,12 @@ def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     assert all(len(final["evidence"][sq.id]) > 0 for sq in final["plan"])
     # Exactly 3 synthesizer calls (planner uses the structured path).
     assert synth_counter["n"] == 3
+    # ADR-019: 3 sub-questions x 2 critic attempts, floor 8 -> cap 8.
+    assert final["max_iterations"] == 8
     # Trace should include every node at least once.
     nodes = {step.node for step in final["trace"]}
     assert {"planner", "retriever", "synthesizer", "critic", "reporter", "tick"} <= nodes
+    assert final.get("max_iterations_reached") is False
 
 
 def test_graph_respects_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,19 +133,29 @@ def test_graph_respects_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr("research_assistant.agents.synthesizer.invoke_llm", synth_stub)
 
+    real_planner = rg.planner_node
+
+    def planner_then_force_low_cap(state: Any) -> Any:
+        out = real_planner(state)
+        out["max_iterations"] = 1
+        return out
+
+    monkeypatch.setattr(rg, "planner_node", planner_then_force_low_cap)
+
     graph = build_graph(
         search_fn=_make_search_stub(),
         vector_search_fn=_empty_corpus_vector_search,
         rerank_fn=_rerank_take_top5,
         retrieval_candidate_pool=5,
     )
-    # max_iterations=1 forces the loop to exit after the first synthesizer
-    # call, leaving sub_q 2 and 3 unanswered but still producing a report.
+    # Planner normally raises the cap (ADR-019); patch forces 1 so the loop
+    # exits after the first sub-question, leaving sq_2/3 unanswered.
     initial = new_state("A simple query", max_iterations=1)
 
     final: Any = graph.invoke(initial)
     assert final["final_report"] is not None
     assert len(final["drafts"]) == 1  # only sq_1 got synthesized
+    assert final.get("max_iterations_reached") is True
 
 
 def test_corpus_then_web_fills_from_web_with_right_budget() -> None:

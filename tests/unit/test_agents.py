@@ -111,6 +111,31 @@ def test_planner_returns_plan_from_structured_output(monkeypatch: pytest.MonkeyP
     assert plan[1].dependency_ids == ["sq_1"]
     assert update["trace"][0].status == "ok"
     assert update["total_cost_usd"] > 0
+    assert update["max_iterations"] == 8  # max(8, 3x2) with default critic attempts
+
+
+def test_planner_respects_higher_prior_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "research_assistant.agents.planner.invoke_structured_llm",
+        _stub_structured_llm(_PLANNER_DRAFTS_OK),
+    )
+    update = planner_node(new_state("Explain RAG", max_iterations=24))
+    assert update["max_iterations"] == 24
+
+
+def test_planner_tightens_planned_cap_when_critic_overridden_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "research_assistant.agents.planner.invoke_structured_llm",
+        _stub_structured_llm(_PLANNER_DRAFTS_OK),
+    )
+    st = new_state("Explain RAG")
+    st["critic_enabled_override"] = False
+    update = planner_node(st)
+    # max(8, 3 sub-questions × 1 attempt) — no Critic retries budgeted.
+    assert update["trace"][0].details["planned_max_iterations"] == 8
+    assert update["max_iterations"] == 8
 
 
 def test_planner_drops_unknown_dependency_ids(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,6 +165,7 @@ def test_planner_falls_back_when_llm_raises(monkeypatch: pytest.MonkeyPatch) -> 
     assert len(update["plan"]) == 1
     assert update["plan"][0].question == "Original query?"
     assert update["trace"][0].status == "error"
+    assert update["max_iterations"] == 8  # max(8, 1x2)
     # Fallback path does not charge any additional cost.
     assert update.get("total_cost_usd", None) is None
 

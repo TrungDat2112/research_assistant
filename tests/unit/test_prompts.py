@@ -31,7 +31,12 @@ def test_available_templates_lists_expected_files() -> None:
     templates = available_templates()
     for expected in (
         "planner_v1.jinja",
+        "synthesizer_system_v1.jinja",
+        "synthesizer_user_v1.jinja",
         "synthesizer_v1.jinja",
+        "critic_system_v1.jinja",
+        "critic_user_prefix_v1.jinja",
+        "critic_user_rest_v1.jinja",
         "critic_v1.jinja",
         "reporter_v1.jinja",
     ):
@@ -68,6 +73,7 @@ def test_synthesizer_template_includes_evidence() -> None:
     evs = _sample_evidence(3, "sq_2")
     out = render(
         "synthesizer_v1.jinja",
+        user_query="Compare RAG approaches",
         sub_question="What is RAG?",
         evidence=evs,
         output_language="vi",

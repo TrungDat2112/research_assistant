@@ -74,5 +74,7 @@ def test_new_state_has_expected_shape() -> None:
     assert state["iterations"] == 0
     assert state["max_iterations"] == 5
     assert state["current_sub_question_index"] == 0
+    assert state["max_iterations_reached"] is False
+    assert state["critic_enabled_override"] is None
     assert state["final_report"] is None
     assert state["total_cost_usd"] == 0.0

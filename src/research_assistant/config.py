@@ -8,6 +8,8 @@ Grounded in:
   * ADR-008 — Anthropic Claude for Planner/Critic and Synthesizer.
   * ADR-009 — Langfuse Cloud for observability.
   * ADR-011 — hard budget caps ($10 total, $0.30 per query).
+  * ADR-019 — ``max_iterations`` raised after planner from plan size + Critic attempts.
+  * ADR-020 — Anthropic prompt caching on static system + repeating user prefix.
   * ADR-018 — default dense embedding ``BAAI/bge-m3`` (override with
     ``EMBEDDING_MODEL`` for English-only fast iteration).
 """
@@ -53,6 +55,11 @@ class Settings(BaseSettings):
         description="Model id for Synthesizer. Fallback to "
         "'claude-3-5-haiku-latest' if Haiku 4.5 is unavailable at runtime.",
     )
+    anthropic_prompt_cache_enabled: bool = Field(
+        default=True,
+        description="When True, mark static system text and repeating user-query prefix "
+        "with Anthropic ephemeral prompt cache (reuse across sub-questions). ADR-020.",
+    )
 
     # ---- Web search (Tavily) --------------------------------------------
     tavily_api_key: SecretStr = Field(default=SecretStr(""))
@@ -71,8 +78,10 @@ class Settings(BaseSettings):
     max_iterations: int = Field(
         default=8,
         ge=1,
-        le=32,
-        description="Hard cap on ReAct iterations per query (PLAN.md §2.2).",
+        le=64,
+        description="Default iteration cap before planner runs; after planner ADR-019 "
+        "raises this to at least max(8, len(plan) * critic_max_attempts_per_sub_question), "
+        "or higher if CLI/env set a larger value.",
     )
     output_language: Literal["vi", "en"] = Field(default="vi")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO")
@@ -188,6 +197,16 @@ class Settings(BaseSettings):
     @property
     def has_search_credentials(self) -> bool:
         return bool(self.tavily_api_key.get_secret_value())
+
+
+def planned_max_iterations(num_sub_questions: int, critic_attempts_per_sub_question: int) -> int:
+    """Iteration budget after planning (ADR-019).
+
+    Each graph loop tick consumes one iteration when the Critic finishes a
+    sub-question (including retries). Worst case is roughly one Critic step
+    per attempt for every sub-question.
+    """
+    return max(8, int(num_sub_questions) * int(critic_attempts_per_sub_question))
 
 
 @lru_cache(maxsize=1)

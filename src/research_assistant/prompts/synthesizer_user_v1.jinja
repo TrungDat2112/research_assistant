@@ -1,0 +1,20 @@
+Sub-question:
+<<<
+{{ sub_question }}
+>>>
+
+{% if critic_feedback is defined and critic_feedback %}
+Critic feedback from the previous attempt (you MUST address this):
+<<<
+{{ critic_feedback }}
+>>>
+
+{% endif %}
+Evidence (numbered chunks — cite them as [^N] where N matches the number):
+{% for ev in evidence %}
+[{{ loop.index }}] {{ ev.hit.title }}
+    URL: {{ ev.hit.url }}
+    {% if ev.hit.published_date %}Published: {{ ev.hit.published_date }}{% endif %}
+    Snippet: {{ ev.hit.snippet | trim }}
+
+{% endfor %}
