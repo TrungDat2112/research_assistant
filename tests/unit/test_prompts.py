@@ -38,6 +38,8 @@ def test_available_templates_lists_expected_files() -> None:
         "critic_user_prefix_v1.jinja",
         "critic_user_rest_v1.jinja",
         "critic_v1.jinja",
+        "language_quality_judge_system_v1.jinja",
+        "language_quality_judge_user_v1.jinja",
         "reporter_v1.jinja",
     ):
         assert expected in templates, f"missing {expected} in {templates}"

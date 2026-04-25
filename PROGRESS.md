@@ -7,7 +7,7 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `RAG + eval scale-up: corpus 20 doc / 1006 chunks; retrieval 100 + rerank A/B (ADR-021/022). Smoke flags + A/B metrics (ADR-024). Tiếp: language quality eval / HyDE (Tuần 3 C).`
+**Phase**: `Tuần 3 đóng (ADR-019..026 ghi trong DECISIONS.md; PLAN.md §10 snapshot 2026-04-25). Tiếp: Tuần 4 — Critic loop hoàn thiện, multi-source tools, factuality eval (PLAN.md §10).`
 **Last updated**: 2026-04-25
 **Last session summary**:
 - **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
@@ -84,13 +84,14 @@ d:\research-assistant\
 │   │   ├── vector_store.py       # ChromaStore (PersistentClient dev)
 │   │   ├── bm25_index.py         # rank_bm25 BM25CorpusIndex (parallel lexical leg)
 │   │   ├── hybrid.py             # stage-1 hybrid fusion 0.5/0.5, top-50+50
+│   │   ├── hyde.py              # optional HyDE dense rewrite (weak fused top-2 probe)
 │   │   └── ingest/
 │   │       ├── __init__.py
 │   │       ├── arxiv_source.py   # arxiv SDK + pymupdf
 │   │       ├── html_source.py    # trafilatura
 │   │       └── loader.py         # SeedConfig.from_yaml + load_seed_corpus
 │   ├── safety/__init__.py        # placeholder — Tuần 5
-│   └── eval/                     # metrics + run_hybrid_retrieval_eval; JSON qrels
+│   └── eval/                     # metrics, retrieval eval, smoke citation, language_quality
 ├── tests/
 │   ├── conftest.py
 │   └── unit/
@@ -116,6 +117,7 @@ d:\research-assistant\
 │   ├── ingest_seed_corpus.py     # fetch → chunk → embed → upsert + manifest
 │   ├── run_retrieval_eval.py     # Recall@10/20, NDCG@10 (default: retrieval_eval_100.json)
 │   ├── run_citation_eval.py      # smoke MD → citation_coverage.json (paragraph [^N] coverage)
+│   ├── run_language_quality_eval.py  # 5 VI + 5 EN → language_quality.json (LLM judge rubric)
 │   └── expand_retrieval_eval.py  # build/validate retrieval_eval_100.json from manifest
 ├── data/
 │   ├── chroma/                   # (gitignored) Chroma PersistentClient store
@@ -126,7 +128,8 @@ d:\research-assistant\
 │       ├── ingest_manifest.json  # sau ingest: xem file (chunks / bge-m3) — rebuild khi đổi model
 │       ├── retrieval_eval_30.json  # 30 qrels legacy (EN, single-gold)
 │       ├── retrieval_eval_100.json  # 100 qrels: 70 EN + 30 VI, multi-gold
-│       └── citation_coverage.json  # smoke batch: mean paragraph citation coverage
+│       ├── citation_coverage.json  # smoke batch: mean paragraph citation coverage
+│       └── language_quality.json   # VI/EN judge rubric (run_language_quality_eval.py)
 ├── configs/
 │   └── seed_corpus.yaml          # arXiv + HTML blogs (see file; expand when eval grows)
 └── notebooks/                    # (empty)
@@ -190,13 +193,13 @@ d:\research-assistant\
 
 #### C. Đa ngôn ngữ + chất lượng (mục 8–9)
 
-8. [ ] **VI/EN translation rubric**: `scripts/run_language_quality_eval.py` — 5 query VI + 5 EN, judge 4 trục (accuracy, fluency, terminology, citation). Baseline tracking.
+8. [x] **VI/EN translation rubric**: `scripts/run_language_quality_eval.py` — 5 query VI + 5 EN, Sonnet judge 4 trục (1–5): accuracy, fluency, terminology, citation → `data/eval/language_quality.json`; `--reports-json` (chỉ judge), `--compare-previous`. Module `eval/language_quality.py` + prompts `language_quality_judge_*_v1.jinja`. ADR-025.
 
-9. [ ] **HyDE optional**: `rag/hyde.py` — khi BM25+dense top-1 khó → sinh hypothesis → re-embed. `Settings.hyde_enabled=False` default. Đo trên 100-câu eval.
+9. [x] **HyDE optional**: `rag/hyde.py` — probe top-2 fused yếu/mơ hồ → Haiku sinh đoạn giả định → `embed_query` → dense leg (BM25 giữ nguyên câu hỏi). `Settings.hyde_enabled=False` mặc định; `run_retrieval_eval.py --with-hyde` đo trên 100 câu + `hyde_delta_vs_baseline`. ADR-026.
 
 #### D. Tài liệu (mục 10)
 
-10. [ ] **ADR + docs**: ADR-019 ✓, ADR-020 ✓; ADR-021 (retrieval 100) ✓; cập nhật `PLAN.md` §10, `PROGRESS.md`.
+10. [x] **ADR + docs**: ADR-019 ✓, ADR-020 ✓, ADR-021 (retrieval 100) ✓ (đầy đủ trong `DECISIONS.md`); `PLAN.md` §10 snapshot + checklist Tuần 1–3; `PROGRESS.md` cập nhật session này.
 
 ---
 
@@ -421,6 +424,21 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`eval/retrieval.py`**: `iter_source_ids_reranked`, `run_rerank_retrieval_eval`.
 - **`scripts/run_retrieval_eval.py`**: `--with-rerank`, `--candidate-pool`, in A/B + `ab_delta`.
 - **Next**: mục 4 (citation coverage batch).
+
+### 2026-04-25 — Session 24 (ADR + roadmap docs)
+- Đồng bộ **PLAN.md §10**: snapshot 2026-04-25, checklist Tuần 1–3 [x], mô tả Tuần 3 mở rộng (eval 100, rerank A/B, HyDE, language quality, ADR-019..026); exit criteria trỏ về `PROGRESS.md` / script eval.
+- Xác nhận **DECISIONS.md** đã có ADR-019, ADR-020, ADR-021 (và ADR-022..026 liên quan Tuần 3); không cần entry ADR mới cho mục 10.
+- **Next**: Tuần 4 (PLAN §10) — `academic_search` / `fetch_pdf`, tool router, `compare_sources`, factuality eval.
+
+### 2026-04-25 — Session 23 (HyDE)
+- **`rag/hyde.py`**: `dense_embedding_for_retrieval`, probe thresholds từ Settings, sinh passage bằng Haiku.
+- **`vector_search`**, **`eval/retrieval.py`** (`use_hyde`, `n_hyde_triggers`); **`run_retrieval_eval.py --with-hyde`**; **`.env.example`**.
+- **`test_hyde.py`**, **ADR-026**.
+
+### 2026-04-25 — Session 22 (Language quality rubric)
+- **`run_language_quality_eval.py`**: 10 seed queries (5 `vi` + 5 `en`), `run_research` + structured judge; JSON baseline + optional `baseline_comparison`.
+- **`eval/language_quality.py`**, judge Jinja v1, **`test_language_quality.py`**.
+- **ADR-025** trong `DECISIONS.md`.
 
 ### 2026-04-25 — Session 21 (Smoke flags + A/B)
 - **ADR-024**: CLI `--no-rerank` / `--no-critic`; `no_cross_encoder_rerank_fn`; `critic_enabled_override` + planner planned cap khi tắt Critic; reporter ghi `max_iterations_reached`; `week1_smoke.py` argparse, `--ab`, payload `mode` / `run_flags` / `ab_compare`.

@@ -386,6 +386,35 @@
 
 ---
 
+## ADR-025: VI/EN language quality rubric — LLM judge 4 trục
+
+- **Ngày**: 2026-04-25
+- **Trạng thái**: Accepted
+- **Context**: PLAN §9.2 và PROGRESS Tuần 3 cần baseline đo chất lượng báo cáo song ngữ (output `vi`/`en`) ngoài retrieval/citation coverage.
+- **Quyết định**:
+  - **10 seed query cố định** trong ``eval/language_quality.py``: 5 tiếng Việt + 5 English (chủ đề AI/RAG/agents, bám corpus seed).
+  - **Judge**: cùng model Planner (Sonnet structured output), 4 điểm Likert 1–5: **accuracy**, **fluency**, **terminology**, **citation**; prompt versioned ``language_quality_judge_*_v1.jinja``.
+  - **CLI** ``scripts/run_language_quality_eval.py``: mặc định ``run_research`` + judge; ``--reports-json`` chỉ chấm báo cáo có sẵn; ``--compare-previous`` ghi delta so file JSON lần chạy trước; report Markdown clip ~120k ký tự khi gửi judge.
+  - **Output** ``data/eval/language_quality.json``: ``mean_by_axis``, ``mean_overall``, cost research/judge, ``rationale_brief`` từng query.
+- **Hệ quả**: Chi phí ~10 lần full research nếu không dùng ``--reports-json``; CI chỉ chạy unit test (mock judge), không gọi API.
+
+---
+
+## ADR-026: HyDE tùy chọn — dense embedding từ đoạn giả định
+
+- **Ngày**: 2026-04-25
+- **Trạng thái**: Accepted
+- **Context**: PLAN §5.2 ghi HyDE optional cho query khó; Tuần 3 cần đo trên eval 100 câu mà không bật mặc định (chi phí LLM + độ trễ).
+- **Quyết định**:
+  - **Probe**: sau ``embed_query`` gốc, chạy ``hybrid_search_stage1`` với ``final_top_k=2``. Kích hoạt HyDE nếu không có hit, hoặc ``combined_score`` top-1 (sau min-max từng chân) < ``hyde_min_top1_fused_score``, hoặc khoảng cách top1-top2 < ``hyde_min_fused_margin``.
+  - **Sinh giả định**: ``anthropic_synthesizer_model`` (Haiku), tối đa ``hyde_max_tokens``, prompt hệ cố định trong ``rag/hyde.py``; ngôn ngữ theo câu hỏi.
+  - **Retrieval**: vector dense dùng ``embed_query(hypothesis)``; **BM25** vẫn dùng chuỗi query người dùng.
+  - **Cấu hình**: ``hyde_enabled`` mặc định ``False``; eval bật tường minh qua ``run_hybrid_retrieval_eval(..., use_hyde=True)`` / ``run_retrieval_eval.py --with-hyde`` (không phụ thuộc env khi eval override).
+  - **Production path**: ``vector_search`` gọi ``dense_embedding_for_retrieval`` với ``hyde_enabled=None`` → đọc Settings.
+- **Hệ quả**: Mỗi query có thể thêm 1 gọi Haiku khi probe yếu; metrics JSON có ``n_hyde_triggers`` và ``hyde_delta_vs_baseline`` (stage-1).
+
+---
+
 <!-- Template cho entry mới:
 
 ## ADR-NNN: <Tiêu đề ngắn>

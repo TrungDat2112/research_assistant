@@ -7,6 +7,7 @@ Usage::
     uv run python scripts/run_retrieval_eval.py
     uv run python scripts/run_retrieval_eval.py --eval-file data/eval/retrieval_eval_30.json
     uv run python scripts/run_retrieval_eval.py --with-rerank --candidate-pool 50
+    uv run python scripts/run_retrieval_eval.py --with-hyde
     uv run python scripts/run_retrieval_eval.py --out data/eval/retrieval_eval_results.json
 """
 
@@ -93,6 +94,11 @@ def main() -> int:
         help="Also run cross-encoder re-rank (stage-1 pool → CE → top-k) and print A/B vs baseline.",
     )
     p.add_argument(
+        "--with-hyde",
+        action="store_true",
+        help="Also run stage-1 hybrid with HyDE dense rewrite on weak probe (needs ANTHROPIC_API_KEY).",
+    )
+    p.add_argument(
         "--candidate-pool",
         type=int,
         default=50,
@@ -114,6 +120,10 @@ def main() -> int:
 
     items = load_retrieval_eval(args.eval_file)
     logger.info("Loaded %d eval items from %s", len(items), args.eval_file)
+
+    if args.with_hyde and not s.has_llm_credentials:
+        logger.error("--with-hyde requires ANTHROPIC_API_KEY for HyDE passage generation.")
+        return 2
 
     clear_vector_search_cache()
     store = ChromaStore(s.chroma_persist_dir, s.corpus_collection)
@@ -145,12 +155,51 @@ def main() -> int:
             "reranker_model": s.reranker_model,
             "corpus_collection": s.corpus_collection,
             "chroma_n_vectors": n_docs,
+            "hyde_enabled_default": s.hyde_enabled,
+            "hyde_min_top1_fused_score": s.hyde_min_top1_fused_score,
+            "hyde_min_fused_margin": s.hyde_min_fused_margin,
         },
         "eval_file": str(args.eval_file),
     }
 
     print()
     _print_block("A — Stage-1 hybrid (no cross-encoder)", hybrid, wall_hybrid)
+
+    if args.with_hyde:
+        t_h0 = datetime.now(tz=UTC)
+        hyde_run = run_hybrid_retrieval_eval(
+            store=store,
+            bm25_index=bm25,
+            embedder=embedder,
+            items=items,
+            final_top_k=args.top_k,
+            k_recall=(10, 20),
+            use_hyde=True,
+        )
+        t_h1 = datetime.now(tz=UTC)
+        wall_hyde = (t_h1 - t_h0).total_seconds()
+        result["stage1_hybrid_hyde"] = hyde_run
+        result["hyde_delta_vs_baseline"] = _delta(
+            hybrid,
+            hyde_run,
+            (
+                "mean_recall@10",
+                "mean_recall@20",
+                "mean_ndcg@10",
+                "mean_mrr",
+                "mean_precision@5",
+            ),
+        )
+        result["wall_time_sec_hyde"] = wall_hyde
+        print(
+            f"--- HyDE triggers: {hyde_run.get('n_hyde_triggers', 0)} / {hyde_run.get('n', 0)} ---",
+        )
+        _print_block("A-prime - Stage-1 hybrid + HyDE (eval override)", hyde_run, wall_hyde)
+        hd = result["hyde_delta_vs_baseline"]
+        print("--- HyDE minus baseline (A-prime - A) ---")
+        for k, v in hd.items():
+            print(f"  {k}:  {v:+.4f}")
+        print()
 
     if args.with_rerank:
         t2 = datetime.now(tz=UTC)
@@ -162,6 +211,7 @@ def main() -> int:
             candidate_pool=args.candidate_pool,
             final_top_k=args.top_k,
             k_recall=(10, 20),
+            use_hyde=args.with_hyde,
         )
         t3 = datetime.now(tz=UTC)
         wall_rer = (t3 - t2).total_seconds()
@@ -178,6 +228,11 @@ def main() -> int:
             ),
         )
         result["wall_time_sec"] = {"stage1_hybrid": wall_hybrid, "rerank_eval": wall_rer}
+        if args.with_hyde:
+            result["wall_time_sec"]["stage1_hybrid_hyde"] = result.get(
+                "wall_time_sec_hyde",
+                0.0,
+            )
         _print_block(
             f"B — Stage-1 pool ({args.candidate_pool}) + cross-encoder → top-{args.top_k}",
             rer,
@@ -189,7 +244,10 @@ def main() -> int:
             print(f"  {k}:  {v:+.4f}")
         print()
     else:
-        result["wall_time_sec"] = wall_hybrid
+        wt: dict[str, Any] = {"stage1_hybrid": wall_hybrid}
+        if args.with_hyde:
+            wt["stage1_hybrid_hyde"] = result.get("wall_time_sec_hyde", 0.0)
+        result["wall_time_sec"] = wt
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

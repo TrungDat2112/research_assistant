@@ -15,6 +15,7 @@ from research_assistant.eval.metrics import per_query_metrics
 from research_assistant.rag.bm25_index import BM25CorpusIndex
 from research_assistant.rag.embedding import EmbeddingModel
 from research_assistant.rag.hybrid import hybrid_search_stage1
+from research_assistant.rag.hyde import dense_embedding_for_retrieval
 from research_assistant.rag.reranker import rerank_hybrid_results
 from research_assistant.rag.vector_store import ChromaStore
 
@@ -41,7 +42,7 @@ def load_retrieval_eval(path: Path) -> list[RetrievalEvalItem]:
     return payload.items
 
 
-def iter_source_ids(
+def iter_source_ids_with_meta(
     store: ChromaStore,
     bm25_index: BM25CorpusIndex,
     embedder: EmbeddingModel,
@@ -50,9 +51,22 @@ def iter_source_ids(
     final_top_k: int = 20,
     query_vec: NDArray[np.float32] | None = None,
     where: dict[str, Any] | None = None,
-) -> list[str]:
-    """Run stage-1 hybrid and return ``source_id`` for each chunk (ranked)."""
-    qvec = embedder.embed_query(query) if query_vec is None else query_vec
+    use_hyde: bool = False,
+) -> tuple[list[str], dict[str, Any]]:
+    """Like :func:`iter_source_ids` but returns per-query HyDE metadata."""
+    hyde_meta: dict[str, Any] = {}
+    if query_vec is None:
+        qvec, hyde_meta = dense_embedding_for_retrieval(
+            query,
+            store,
+            bm25_index,
+            embedder,
+            where=where,
+            hyde_enabled=use_hyde,
+        )
+    else:
+        qvec = query_vec
+        hyde_meta = {"hyde_applied": False, "hyde_reason": "query_vec_provided"}
     hits = hybrid_search_stage1(
         store,
         bm25_index,
@@ -63,7 +77,33 @@ def iter_source_ids(
         final_top_k=final_top_k,
         where=where,
     )
-    return [str(h.metadata.get("source_id", "")).strip() for h in hits]
+    ranked = [str(h.metadata.get("source_id", "")).strip() for h in hits]
+    return ranked, hyde_meta
+
+
+def iter_source_ids(
+    store: ChromaStore,
+    bm25_index: BM25CorpusIndex,
+    embedder: EmbeddingModel,
+    query: str,
+    *,
+    final_top_k: int = 20,
+    query_vec: NDArray[np.float32] | None = None,
+    where: dict[str, Any] | None = None,
+    use_hyde: bool = False,
+) -> list[str]:
+    """Run stage-1 hybrid and return ``source_id`` for each chunk (ranked)."""
+    ranked, _ = iter_source_ids_with_meta(
+        store,
+        bm25_index,
+        embedder,
+        query,
+        final_top_k=final_top_k,
+        query_vec=query_vec,
+        where=where,
+        use_hyde=use_hyde,
+    )
+    return ranked
 
 
 def iter_source_ids_reranked(
@@ -77,11 +117,22 @@ def iter_source_ids_reranked(
     where: dict[str, Any] | None = None,
     candidate_pool: int = 20,
     cross_encoder: Any | None = None,
+    use_hyde: bool = False,
 ) -> list[str]:
     """Stage-1 hybrid pool (``candidate_pool``) then cross-encoder re-rank to ``final_top_k``."""
     if final_top_k > candidate_pool:
         raise ValueError("final_top_k must be <= candidate_pool for re-rank eval")
-    qvec = embedder.embed_query(query) if query_vec is None else query_vec
+    if query_vec is None:
+        qvec, _ = dense_embedding_for_retrieval(
+            query,
+            store,
+            bm25_index,
+            embedder,
+            where=where,
+            hyde_enabled=use_hyde,
+        )
+    else:
+        qvec = query_vec
     pool = hybrid_search_stage1(
         store,
         bm25_index,
@@ -109,6 +160,7 @@ def run_hybrid_retrieval_eval(
     items: list[RetrievalEvalItem],
     final_top_k: int = 20,
     k_recall: tuple[int, ...] = (10, 20),
+    use_hyde: bool = False,
 ) -> dict[str, Any]:
     """Macro-averaged recall@k and mean NDCG@10; stage-1 hybrid only (no re-rank)."""
     if final_top_k < max(k_recall, default=10):
@@ -117,15 +169,23 @@ def run_hybrid_retrieval_eval(
     per_query: list[dict[str, Any]] = []
     for it in items:
         gold: set[str] = set(it.relevant_source_ids)
-        ranked = iter_source_ids(
+        ranked, hyde_meta = iter_source_ids_with_meta(
             store,
             bm25_index,
             embedder,
             it.query,
             final_top_k=final_top_k,
+            use_hyde=use_hyde,
         )
         m = per_query_metrics(ranked, gold, k_list=k_recall)
-        per_query.append({"id": it.id, **m})
+        per_query.append(
+            {
+                "id": it.id,
+                "hyde_applied": bool(hyde_meta.get("hyde_applied")),
+                "hyde_reason": hyde_meta.get("hyde_reason"),
+                **m,
+            },
+        )
 
     n = len(per_query)
     if n == 0:
@@ -134,9 +194,12 @@ def run_hybrid_retrieval_eval(
     ndcgs = [float(p["ndcg@10"]) for p in per_query]
     mrrs = [float(p["mrr"]) for p in per_query]
     precs5 = [float(p["precision@5"]) for p in per_query]
+    n_hyde = sum(1 for p in per_query if p.get("hyde_applied"))
     out: dict[str, Any] = {
         "n": n,
-        "mode": "stage1_hybrid",
+        "mode": "stage1_hybrid_hyde" if use_hyde else "stage1_hybrid",
+        "use_hyde": use_hyde,
+        "n_hyde_triggers": n_hyde,
         "final_top_k": final_top_k,
         "k_recall": list(k_recall),
         "mean_ndcg@10": fmean(ndcgs),
@@ -160,6 +223,7 @@ def run_rerank_retrieval_eval(
     final_top_k: int = 20,
     k_recall: tuple[int, ...] = (10, 20),
     cross_encoder: Any | None = None,
+    use_hyde: bool = False,
 ) -> dict[str, Any]:
     """Same metrics as :func:`run_hybrid_retrieval_eval` after cross-encoder re-ordering."""
     if final_top_k < max(k_recall, default=10):
@@ -178,6 +242,7 @@ def run_rerank_retrieval_eval(
             final_top_k=final_top_k,
             candidate_pool=candidate_pool,
             cross_encoder=cross_encoder,
+            use_hyde=use_hyde,
         )
         m = per_query_metrics(ranked, gold, k_list=k_recall)
         per_query.append({"id": it.id, **m})
@@ -189,9 +254,13 @@ def run_rerank_retrieval_eval(
     ndcgs = [float(p["ndcg@10"]) for p in per_query]
     mrrs = [float(p["mrr"]) for p in per_query]
     precs5 = [float(p["precision@5"]) for p in per_query]
+    mode = "stage1_hybrid_rerank"
+    if use_hyde:
+        mode = "stage1_hybrid_hyde_rerank"
     out: dict[str, Any] = {
         "n": n,
-        "mode": "stage1_hybrid_rerank",
+        "mode": mode,
+        "use_hyde": use_hyde,
         "candidate_pool": candidate_pool,
         "final_top_k": final_top_k,
         "k_recall": list(k_recall),

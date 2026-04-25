@@ -327,29 +327,32 @@ Defense-in-depth 3 lớp:
 
 > Bám nguyên tắc **Start small, start smart**: tuần 1 single-tool + model mạnh; mở rộng dần.
 
+> **Snapshot 2026-04-25** (chi tiết execution: `PROGRESS.md`): **Tuần 1–3** đã đóng. Tuần 3 gồm: corpus seed **~20 doc / 1006 chunks** (bge-m3, Chroma dev), **eval 100** qrels EN+VI + rerank A/B (ADR-021/022), citation batch + language quality + HyDE (ADR-023/025/026), smoke flags + A/B (ADR-024), **dynamic `max_iterations`** (ADR-019), **prompt caching** (ADR-020). Vector store dev vẫn Chroma; Qdrant ở backlog prod. **Tiếp: Tuần 4** theo mục dưới.
+
 ### Tuần 1 — Skeleton & tool cơ bản
-- [ ] Setup repo (`uv init`, pre-commit, ruff, mypy, pytest).
-- [ ] LangGraph skeleton (nodes: planner → retriever → synthesizer → reporter).
-- [ ] 1 tool duy nhất: `web_search` (Tavily).
-- [ ] Streamlit UI tối giản: input query → output MD.
-- [ ] Agent chạy end-to-end với **1 sub-question**, output MD thô.
-- **Exit criteria**: chạy được 5 query mẫu, có trace log.
+- [x] Setup repo (`uv init`, pre-commit, ruff, mypy, pytest).
+- [x] LangGraph skeleton (nodes: planner → retriever → synthesizer → reporter).
+- [x] 1 tool duy nhất: `web_search` (Tavily).
+- [x] Streamlit UI tối giản: input query → output MD.
+- [x] Agent chạy end-to-end (multi sub-question); output MD có citation.
+- **Exit criteria**: chạy được 5 query mẫu, có trace log — **đạt** (xem `PROGRESS.md`).
 
 ### Tuần 2 — RAG pipeline
-- [ ] Ingest 50-100 docs mẫu (arXiv AI papers + blog posts).
-- [ ] Chunking (500 tokens, overlap 50, contextual summary).
-- [ ] Embedding pipeline (bge-m3 → Qdrant).
-- [ ] BM25 index.
-- [ ] Hybrid retrieval (chưa re-rank).
-- [ ] Eval set 30 câu đầu tiên.
-- **Exit criteria**: Recall@20 ≥ 0.7.
+- [x] Ingest seed corpus (arXiv + blog; mở rộng dần — hiện ~20 doc trong YAML, không bắt buộc 50–100 ở v1 dev).
+- [x] Chunking (500 tokens, overlap 50, contextual summary).
+- [x] Embedding pipeline (bge-m3 mặc định; Chroma PersistentClient thay Qdrant ở dev).
+- [x] BM25 index.
+- [x] Hybrid retrieval; cross-encoder re-rank tích hợp (chi tiết Tuần 2–3, ADR-015).
+- [x] Eval set 30 câu (ADR-016); mở rộng 100 câu ở Tuần 3 (ADR-021).
+- **Exit criteria**: Recall@20 ≥ 0.7 — **đạt** trên dev seed (số liệu trong `PROGRESS.md` / `run_retrieval_eval.py`).
 
-### Tuần 3 — Re-ranker + Planner
-- [ ] Cross-encoder re-rank (`bge-reranker-v2-m3`).
-- [ ] Planner agent phân rã 3-5 sub-questions.
-- [ ] Citation tracking chuẩn `[^N]`.
-- [ ] Mở rộng eval set lên 100 câu.
-- **Exit criteria**: NDCG@10 ≥ 0.65; citation coverage ≥ 80%.
+### Tuần 3 — Re-ranker, eval 100, tinh chỉnh stack
+- [x] Cross-encoder re-rank (`bge-reranker-v2-m3`, eval A/B vs stage-1 — ADR-015/022).
+- [x] Planner agent phân rã sub-questions (từ Tuần 1; cải thiện theo session).
+- [x] Citation tracking chuẩn `[^N]` + Critic draft (ADR-017) + batch coverage (ADR-023).
+- [x] Mở rộng eval set lên **100 câu** (70 EN + 30 VI, multi-gold — ADR-021); VI/EN language quality + HyDE optional (ADR-025/026).
+- [x] Tinh chỉnh: `max_iterations` sau planner (ADR-019), Anthropic prompt cache (ADR-020), smoke CLI flags / A/B (ADR-024).
+- **Exit criteria (mục tiêu Tuần 3)**: NDCG@10, citation coverage, cost/latency — đo bằng `run_retrieval_eval.py`, `run_citation_eval.py`, `week1_smoke.py`; bảng số thực tế trong `PROGRESS.md`.
 
 ### Tuần 4 — Critic loop + Multi-source
 - [ ] Critic agent + retry loop (max 2).

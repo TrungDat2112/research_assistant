@@ -12,6 +12,7 @@ Grounded in:
   * ADR-020 — Anthropic prompt caching on static system + repeating user prefix.
   * ADR-018 — default dense embedding ``BAAI/bge-m3`` (override with
     ``EMBEDDING_MODEL`` for English-only fast iteration).
+  * ADR-026 — optional HyDE (hypothetical document embedding) for weak hybrid probe.
 """
 
 from __future__ import annotations
@@ -149,6 +150,31 @@ class Settings(BaseSettings):
         ge=1,
         le=20,
         description="Hits passed to the Synthesizer after re-ranking.",
+    )
+
+    # ---- HyDE — optional dense query rewrite (PLAN §5.2) -----------------
+    hyde_enabled: bool = Field(
+        default=False,
+        description="When True, weak hybrid top-2 probe may replace the dense embedding "
+        "with an embedded hypothetical passage (HyDE). BM25 still uses the raw query.",
+    )
+    hyde_min_top1_fused_score: float = Field(
+        default=0.38,
+        ge=0.0,
+        le=1.0,
+        description="Trigger HyDE when fused top-1 score (after per-leg min-max) is below this.",
+    )
+    hyde_min_fused_margin: float = Field(
+        default=0.04,
+        ge=0.0,
+        le=1.0,
+        description="Trigger HyDE when top1-top2 fused margin is below this (ambiguous).",
+    )
+    hyde_max_tokens: int = Field(
+        default=256,
+        ge=64,
+        le=1024,
+        description="Max output tokens for the hypothetical passage (synthesizer model).",
     )
 
     # ---- Critic (PLAN §6.2 / ADR-005) -----------------------------------

@@ -26,6 +26,7 @@ from research_assistant.rag.hybrid import (
     hybrid_result_to_search_hit,
     hybrid_search_stage1,
 )
+from research_assistant.rag.hyde import dense_embedding_for_retrieval
 from research_assistant.rag.vector_store import ChromaStore
 
 logger = logging.getLogger(__name__)
@@ -117,7 +118,14 @@ def vector_search(
         )
         return []
 
-    qvec = emb.embed_query(query)
+    qvec, hyde_meta = dense_embedding_for_retrieval(
+        query,
+        st,
+        idx,
+        emb,
+        where=filters,
+        hyde_enabled=None,
+    )
     hybrid_hits = hybrid_search_stage1(
         st,
         idx,
@@ -143,6 +151,8 @@ def vector_search(
             "n_hits": len(hits),
             "weight_dense": weight_dense,
             "weight_bm25": weight_bm25,
+            "hyde_applied": hyde_meta.get("hyde_applied", False),
+            "hyde_reason": hyde_meta.get("hyde_reason"),
             "urls": [str(h.url) for h in hits[:10]],
         },
     )

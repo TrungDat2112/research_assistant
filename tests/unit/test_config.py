@@ -31,6 +31,7 @@ def test_defaults_do_not_require_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.has_llm_credentials is False
     assert settings.has_search_credentials is False
     assert settings.langfuse_enabled is False
+    assert settings.hyde_enabled is False
 
 
 def test_credentials_flip_flags(monkeypatch: pytest.MonkeyPatch) -> None:
