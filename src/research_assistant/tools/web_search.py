@@ -7,8 +7,10 @@ Contract (LLM-facing):
     when:     Whenever the agent needs fresh / open-web facts that are
               unlikely to be already in the corpus.
 
-Return type is always a ``list[SearchHit]``; the caller decides whether to
-wrap them as ``Evidence`` for a specific sub-question.
+Return type is always a ``list[SearchHit]``; each web hit sets
+``web_trust_tier`` (``high`` / ``medium`` / ``low``) from hostname heuristics
+for the tool router — call signature is unchanged. The caller decides whether
+to wrap hits as ``Evidence`` for a specific sub-question.
 """
 
 from __future__ import annotations
@@ -16,12 +18,13 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any, Literal, Protocol
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 from tavily import TavilyClient
 
 from research_assistant.config import get_settings
-from research_assistant.graph.state import SearchHit
+from research_assistant.graph.state import SearchHit, WebTrustTier
 from research_assistant.observability import observe, update_span
 
 logger = logging.getLogger(__name__)
@@ -35,6 +38,52 @@ SearchDepth = Literal["basic", "advanced"]
 _YEAR_PATTERN = re.compile(r"\b(năm\s+)?20\d{2}\b", flags=re.IGNORECASE)
 _IN_YEAR_PATTERN = re.compile(r"\bin\s+20\d{2}\b", flags=re.IGNORECASE)
 
+# Host suffixes for ``web_trust_tier`` (Tuần 4 — noisy job/course pages vs labs).
+_HIGH_TRUST_DOMAIN_SUFFIXES: tuple[str, ...] = (
+    "anthropic.com",
+    "openai.com",
+    "deepmind.google",
+    "ai.googleblog.com",
+    "research.google",
+    "blog.google",
+    "nvidia.com",
+    "pytorch.org",
+    "tensorflow.org",
+    "huggingface.co",
+    "arxiv.org",
+    "semanticscholar.org",
+    "aclanthology.org",
+    "neurips.cc",
+    "icml.cc",
+    "iclr.cc",
+    "microsoft.com",
+    "ibm.com",
+    "apple.com",
+    "python.org",
+    "docs.python.org",
+    "readthedocs.io",
+    "langchain.com",
+    "langgraph.dev",
+    "github.io",
+    "wikipedia.org",
+)
+_LOW_TRUST_DOMAIN_SUFFIXES: tuple[str, ...] = (
+    "indeed.com",
+    "glassdoor.com",
+    "linkedin.com",
+    "ziprecruiter.com",
+    "monster.com",
+    "simplyhired.com",
+    "udemy.com",
+    "coursera.org",
+    "skillshare.com",
+    "pluralsight.com",
+    "brainly.com",
+    "chegg.com",
+    "coursehero.com",
+    "quizlet.com",
+)
+
 
 class _SearchClient(Protocol):
     """Minimal protocol implemented by :class:`tavily.TavilyClient`.
@@ -47,6 +96,40 @@ class _SearchClient(Protocol):
 
 class WebSearchError(RuntimeError):
     """Raised when the web search backend fails or returns malformed data."""
+
+
+def _host_and_path(url: str) -> tuple[str, str]:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = (parsed.path or "").lower()
+    return host, path
+
+
+def _host_matches_suffix(host: str, suffix: str) -> bool:
+    return host == suffix or host.endswith(f".{suffix}")
+
+
+def web_trust_tier_for_url(url: str) -> WebTrustTier:
+    """Heuristic tier for an HTTPS URL's registrable-style host.
+
+    Used by :func:`web_search` on each Tavily hit. The rule-based tool router
+    (B1) can prefer ``high``, cap ``low``, or merge with academic/corpus
+    signals without changing the ``web_search`` call signature.
+    """
+    host, _ = _host_and_path(url)
+    if not host:
+        return "medium"
+    if host.endswith((".edu", ".gov")):
+        return "high"
+    for suffix in _LOW_TRUST_DOMAIN_SUFFIXES:
+        if _host_matches_suffix(host, suffix):
+            return "low"
+    for suffix in _HIGH_TRUST_DOMAIN_SUFFIXES:
+        if _host_matches_suffix(host, suffix):
+            return "high"
+    return "medium"
 
 
 def _build_client() -> TavilyClient:
@@ -66,6 +149,7 @@ def _coerce_hit(raw: dict[str, Any]) -> SearchHit | None:
     raising, so one bad row does not poison a whole search.
     """
     try:
+        url_str = str(raw["url"])
         return SearchHit(
             url=raw["url"],
             title=raw.get("title") or raw["url"],
@@ -74,6 +158,7 @@ def _coerce_hit(raw: dict[str, Any]) -> SearchHit | None:
             published_date=raw.get("published_date"),
             source="web",
             raw_content=raw.get("raw_content"),
+            web_trust_tier=web_trust_tier_for_url(url_str),
         )
     except (KeyError, ValidationError) as exc:
         logger.warning("Dropping malformed Tavily result: %s", exc)
@@ -160,6 +245,11 @@ def web_search(
         len(hits),
         bounded,
     )
+    tier_counts = {"high": 0, "medium": 0, "low": 0}
+    for h in hits:
+        t = h.web_trust_tier
+        if t is not None:
+            tier_counts[t] += 1
     update_span(
         input={
             "query": query,
@@ -167,7 +257,11 @@ def web_search(
             "search_depth": search_depth,
             "time_range": time_range,
         },
-        output={"n_hits": len(hits), "urls": [str(h.url) for h in hits[:10]]},
+        output={
+            "n_hits": len(hits),
+            "web_trust_tier_counts": tier_counts,
+            "urls": [str(h.url) for h in hits[:10]],
+        },
     )
     return hits
 
@@ -261,8 +355,17 @@ def web_search_with_fallback(
                 client=client,
             )
 
+    tier_counts = {"high": 0, "medium": 0, "low": 0}
+    for h in hits:
+        t = h.web_trust_tier
+        if t is not None:
+            tier_counts[t] += 1
     update_span(
         input={"query": query, "max_results": max_results, "time_range": time_range},
-        output={"n_hits": len(hits), "stage_used": stage_used},
+        output={
+            "n_hits": len(hits),
+            "stage_used": stage_used,
+            "web_trust_tier_counts": tier_counts,
+        },
     )
     return hits

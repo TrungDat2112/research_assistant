@@ -7,8 +7,8 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 3 đóng (ADR-019..026 ghi trong DECISIONS.md; PLAN.md §10 snapshot 2026-04-25). Tiếp: Tuần 4 — Critic loop hoàn thiện, multi-source tools, factuality eval (PLAN.md §10).`
-**Last updated**: 2026-04-25
+**Phase**: `Tuần 4 khởi động — multi-source tools (academic_search / fetch_pdf), tool router rule-based, compare_sources, factuality eval 20 query (PLAN.md §10 Tuần 4).`
+**Last updated**: 2026-04-27
 **Last session summary**:
 - **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
 - **Rerank eval**: `run_retrieval_eval.py --with-rerank` — so sánh stage-1 vs pool+`bge-reranker-v2-m3`; thêm MRR, precision@5; `ab_delta` trong JSON output.
@@ -66,6 +66,8 @@ d:\research-assistant\
 │   │   └── reporter.py           # deterministic Jinja render + trace_url footer; @observe span
 │   ├── tools/
 │   │   ├── web_search.py         # Tavily wrapper + fallback ladder; @observe tool span
+│   │   ├── academic_search.py    # arXiv metadata → SearchHit; @observe
+│   │   ├── fetch_pdf.py          # arXiv id / .pdf URL → Document; httpx + cache + pymupdf
 │   │   └── vector_search.py     # hybrid BM25 + dense → SearchHit; @observe
 │   ├── graph/
 │   │   ├── state.py              # ResearchState TypedDict + trace_id/url + 5 Pydantic models
@@ -200,6 +202,53 @@ d:\research-assistant\
 #### D. Tài liệu (mục 10)
 
 10. [x] **ADR + docs**: ADR-019 ✓, ADR-020 ✓, ADR-021 (retrieval 100) ✓ (đầy đủ trong `DECISIONS.md`); `PLAN.md` §10 snapshot + checklist Tuần 1–3; `PROGRESS.md` cập nhật session này.
+
+---
+
+### Việc tiếp theo — Tuần 4 (12 mục — A/B/C/D)
+
+**Context**: Tuần 3 đóng. Demo `data/eval/demo_run.md` lộ điểm yếu **nguồn web nhiễu** (job/course pages), **References dính dòng**, **mục 4 thiếu evidence so sánh** → Tuần 4 mở thêm nguồn học thuật + router quyết định tool + Critic 4 trục + factuality eval.
+
+**Exit criteria** (PLAN §10 Tuần 4 + concretize):
+- Factuality ≥ **0.80** trên `factuality_eval_20.json` (LLM judge faithfulness, 15 EN + 5 VI).
+- Tool router hit **≥ 80%** so gold tool plan (12 case sample).
+- ≥ **2/20** report flag conflict đúng (kiểm tay).
+- Cost smoke 5 query không tăng > **20%** so baseline Tuần 3.
+- `pytest`, `ruff`, `mypy strict` ✓.
+
+**Quyết định user (2026-04-26)**: `fetch_pdf` chỉ arXiv + URL `.pdf` (không Playwright); `compare_sources` heuristic mặc định, LLM-mode `auto` qua router; factuality judge dùng Sonnet 4.5; bộ 20 query AI/ML tự đề xuất theo seed corpus.
+
+#### A. Tool layer — multi-source retrieval (mục 1–3)
+
+1. [x] **`academic_search`** (`src/research_assistant/tools/academic_search.py`, ~150 LoC): wrap `rag/ingest/arxiv_source.search_arxiv` thành tool trả `list[SearchHit]` (`source="academic"`); injectable `search_fn` cho test; `@observe(as_type="tool")` + `update_span`. Validate qua `TypeAdapter[HttpUrl]`, dedupe `arxiv_id`, drop malformed rows, cap snippet 500 chars, year filter qua `date(year_from, 1, 1)`. Test `tests/unit/test_academic_search.py` (10 cases) ✓; full suite **131/131** pass; `ruff` + `mypy strict` ✓.
+
+2. [x] **`fetch_pdf`** (`src/research_assistant/tools/fetch_pdf.py`): arXiv id / `arxiv.org` URL / URL trực tiếp `.pdf`; cache `data/raw/pdf_cache/<sha1>.pdf` (SHA-1 của URL tải); httpx stream 25 MiB cap, timeout 30s; pymupdf extract tối đa 400k chars; trả `Document` (= `SourceDoc` trong `rag/schemas.py`); inject `client` / `extract_pdf_text_fn` cho test; `@observe`. **`httpx`** thêm vào `pyproject.toml`. Test `tests/unit/test_fetch_pdf.py` (18 cases) — `httpx.MockTransport` + patch `pymupdf.open`. Full suite **149/149** pass.
+
+3. [x] **(scope giữ nguyên)** `web_search` / `web_search_with_fallback` — không đổi signature; mỗi hit web có `SearchHit.web_trust_tier` (`high` | `medium` | `low`) theo hostname (`.edu`/`.gov`, danh mục lab/docs vs job/course/Q&A); hàm public `web_trust_tier_for_url()` dùng lại cho router; Langfuse `web_trust_tier_counts` trong `update_span`. Academic/vector/corpus để `web_trust_tier=None`. Test `test_web_search.py` bổ sung.
+
+#### B. Routing & Planner (mục 4)
+
+4. [ ] **Tool router rule-based** (`src/research_assistant/tools/router.py`): heuristic intent (`factual` / `academic` / `comparative` / `internal_corpus`) → `ToolPlan(primary, optional)`; tích hợp graph `_route_then_collect` thay `_corpus_then_web_hits`. Settings `tool_router_enabled=True`, `tool_router_max_tools=3`. ADR-027.
+
+5. [ ] **Planner `suggested_tools`**: schema đã có (`SubQuestion.suggested_tools`); cập nhật prompt planner để gợi ý; **router thắng** khi xung đột (deterministic).
+
+#### C. Synthesis quality (mục 6–8)
+
+6. [ ] **`compare_sources`** (`src/research_assistant/tools/compare_sources.py`): mode `heuristic` (regex số/đơn vị) + `llm` (Sonnet structured); chạy trước Critic; output `ConflictReport` → `Critique.conflicts`. Settings `compare_sources_mode: Literal["off","heuristic","auto"]="auto"`. ADR-028.
+
+7. [ ] **Critic 4 trục** (mở rộng `agents/critic.py`): faithfulness (LLM) + completeness + citation coverage (heuristic) + consistency (từ `ConflictReport`); `critic_min_faithfulness=4.0`. Retry như cũ; forced_pass kèm conflict block.
+
+8. [ ] **Reporter** (`prompts/reporter_v1.jinja` + `agents/reporter.py`): References mỗi entry **một dòng**; section optional `## Conflicts noted` khi có conflict severity ≥ medium.
+
+#### D. Eval & docs (mục 9–12)
+
+9. [ ] **`factuality_eval_20.json`** (`data/eval/factuality_eval_20.json`): 15 EN + 5 VI, mỗi query có 3–5 atomic gold claims; `eval/factuality.py` + `scripts/run_factuality_eval.py` (Sonnet judge: supported / contradicted / unsupported). ADR-029.
+
+10. [ ] **Smoke A/B mới**: `week1_smoke.py --with-router --with-compare-sources`; JSON ghi `router_plan_per_subq`, `n_conflicts`.
+
+11. [ ] **ADR**: ADR-027 (router), ADR-028 (compare_sources), ADR-029 (factuality eval); `.env.example` thêm `TOOL_ROUTER_ENABLED`, `COMPARE_SOURCES_MODE`.
+
+12. [ ] **Docs**: cập nhật `PLAN.md §10 Tuần 4`, `PROGRESS.md` (log + checklist tick).
 
 ---
 
@@ -424,6 +473,25 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`eval/retrieval.py`**: `iter_source_ids_reranked`, `run_rerank_retrieval_eval`.
 - **`scripts/run_retrieval_eval.py`**: `--with-rerank`, `--candidate-pool`, in A/B + `ab_delta`.
 - **Next**: mục 4 (citation coverage batch).
+
+### 2026-04-27 — Session 27 (Tuần 4 A3 web_search trust tiers)
+- **`SearchHit.web_trust_tier`**: optional `high`/`medium`/`low`; `web_search` gán theo domain heuristic + `web_trust_tier_for_url()`; span output thêm `web_trust_tier_counts`.
+- **Next**: B1 `tools/router.py` tiêu thụ `web_trust_tier`.
+
+### 2026-04-27 — Session 26 (Tuần 4 A2 fetch_pdf)
+- **`tools/fetch_pdf.py`**: `_resolve_fetch_target` (arXiv mới + URL cũ `cs.XX/1234567`, link abs/pdf, hoặc `https` path kết thúc `.pdf`); `_stream_download_pdf` kiểm `%PDF`; cache key SHA-1 URL; `FetchPdfError` cho input/HTTP/oversize/non-PDF/empty text.
+- **`rag/schemas.py`**: `Document: TypeAlias = SourceDoc` (PLAN §4.1).
+- **Deps**: `httpx>=0.27.0`.
+- **Tests**: `tests/unit/test_fetch_pdf.py` — mock transport, cache hit, oversize, HTTP 404, patch `pymupdf.open` cho extract + truncate + empty body.
+- **Toolchain**: `ruff` ✓ · `mypy strict` ✓ · `pytest 149/149` ✓.
+- **Next**: Tuần 4 B1 — tool router (`tools/router.py`) hoặc tích hợp `fetch_pdf` vào graph nếu roadmap yêu cầu trước.
+
+### 2026-04-26 — Session 25 (Tuần 4 plan + A1 academic_search)
+- **PROGRESS.md**: ghi 12 mục Tuần 4 (A/B/C/D), exit criteria, quyết định user 2026-04-26 (fetch_pdf scope, compare_sources mode, Sonnet judge, 20 query AI/ML).
+- **A1 `academic_search`** (`src/research_assistant/tools/academic_search.py`): wrap `search_arxiv` → `SearchHit(source="academic")`; injectable `search_fn`, `@observe(as_type="tool")`, dedupe arXiv id, cap snippet 500, year filter, validate URL via `TypeAdapter[HttpUrl]`. Drop malformed rows / non-list payload với log warning thay vì crash batch.
+- **Tests**: `tests/unit/test_academic_search.py` (10 cases) — happy path, clamp max, year_from → date, dedupe, malformed rows, snippet cap, non-list payload. Mock `_RecordingSearch` capture kwargs để verify wrapper truyền đúng arXiv backend.
+- **Toolchain**: `ruff check` ✓ · `ruff format` ✓ (2 file) · `mypy strict` ✓ (38 src) · `pytest 131/131` ✓ trong 41.3s.
+- **Next**: A2 — `fetch_pdf` (arXiv id + URL `.pdf` direct, cache `data/raw/pdf_cache/`, pymupdf extract, timeout 30s, cap 25 MB / 400k chars).
 
 ### 2026-04-25 — Session 24 (ADR + roadmap docs)
 - Đồng bộ **PLAN.md §10**: snapshot 2026-04-25, checklist Tuần 1–3 [x], mô tả Tuần 3 mở rộng (eval 100, rerank A/B, HyDE, language quality, ADR-019..026); exit criteria trỏ về `PROGRESS.md` / script eval.

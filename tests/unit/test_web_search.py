@@ -14,6 +14,7 @@ from research_assistant.tools.web_search import (
     _simplify_query,
     web_search,
     web_search_with_fallback,
+    web_trust_tier_for_url,
 )
 
 
@@ -57,6 +58,36 @@ def test_web_search_returns_parsed_hits() -> None:
     assert hits[0].score == pytest.approx(0.91)
     assert hits[1].title == "Beta"
     assert hits[0].source == "web"
+    assert hits[0].web_trust_tier == "medium"
+    assert hits[1].web_trust_tier == "medium"
+
+
+def test_web_search_sets_trust_tier_high_and_low() -> None:
+    payload = {
+        "results": [
+            {
+                "url": "https://www.anthropic.com/research",
+                "title": "Lab",
+                "content": "snippet",
+            },
+            {
+                "url": "https://www.udemy.com/course/x",
+                "title": "Course",
+                "content": "learn",
+            },
+        ],
+    }
+    hits = web_search("q", client=_FakeClient(payload))
+    assert hits[0].web_trust_tier == "high"
+    assert hits[1].web_trust_tier == "low"
+
+
+def test_web_trust_tier_edu_high() -> None:
+    assert web_trust_tier_for_url("https://cs.stanford.edu/~user/paper") == "high"
+
+
+def test_web_trust_tier_unknown_medium() -> None:
+    assert web_trust_tier_for_url("https://news.ycombinator.com/item?id=1") == "medium"
 
 
 def test_web_search_clamps_max_results() -> None:

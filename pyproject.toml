@@ -26,6 +26,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     # Tools
     "tavily-python>=0.5.0",
+    "httpx>=0.27.0",
     # Prompts
     "jinja2>=3.1.4",
     # Observability

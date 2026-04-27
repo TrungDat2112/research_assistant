@@ -46,6 +46,9 @@ class SubQuestion(BaseModel):
     dependency_ids: list[str] = Field(default_factory=list)
 
 
+WebTrustTier = Literal["high", "medium", "low"]
+
+
 class SearchHit(BaseModel):
     """Single result from a search tool (Tavily, arXiv, vector store, ...).
 
@@ -63,6 +66,12 @@ class SearchHit(BaseModel):
         default=None,
         description="Full content when the provider supplied it (Tavily "
         "`include_raw_content=True`). Kept optional to bound context size.",
+    )
+    web_trust_tier: WebTrustTier | None = Field(
+        default=None,
+        description="Heuristic trust tier for open-web URLs — set by "
+        "``web_search`` for router prioritisation; left None for academic / "
+        "vector / corpus hits.",
     )
 
 

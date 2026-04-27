@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -52,6 +52,10 @@ class SourceDoc(BaseModel):
     def make_source_id(cls, url: str) -> str:
         """Deterministic id from a URL — useful for HTML sources without ids."""
         return "h_" + hashlib.sha1(url.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+
+
+# PLAN.md §4.1 — tool return type for ``fetch_url`` / ``fetch_pdf``.
+Document: TypeAlias = SourceDoc
 
 
 class ChunkMetadata(BaseModel):
