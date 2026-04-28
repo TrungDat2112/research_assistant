@@ -17,10 +17,21 @@ the draft appear as [^N]):
 
 {% endfor %}
 
+{% if conflict_report is defined and conflict_report and conflict_report.items %}
+Cross-source conflicts (pre-critic scan; mode={{ conflict_report.mode_used }}):
+{% for c in conflict_report.items %}
+- [{{ c.severity }}/{{ c.detection }}] {{ c.summary }}{% if c.involved_ref_labels %} (refs: {{ c.involved_ref_labels | join(', ') }}){% endif %}
+{% endfor %}
+Consider **consistency**: flag internal contradictions or unresolved tension between sources.
+{% endif %}
+
 Draft answer:
 <<<
 {{ draft.content }}
 >>>
 
-Deterministic paragraph citation coverage already computed (0–1, higher is
+Deterministic paragraph citation coverage already computed (0-1, higher is
 better): {{ paragraph_citation_coverage }}
+
+Deterministic consistency score from cross-source scan (1-5, 5 = no conflicts):
+{{ consistency_score }}

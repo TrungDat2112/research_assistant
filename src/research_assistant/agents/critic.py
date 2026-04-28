@@ -1,12 +1,14 @@
-"""Critic agent (draft) — judges a single sub-question draft before advancing.
+"""Critic agent - four-axis rubric before advancing (ADR-005, ADR-030).
 
 Combines:
-  * **Deterministic citation coverage** on paragraph granularity (ADR-005: ≥90%).
-  * **Structured Sonnet output** for whether the draft answers the sub-question
-    and overall quality (PLAN §6.3).
+  * **Citation coverage** - deterministic paragraph ``[^N]`` share (>= configured).
+  * **Faithfulness** - LLM 1-5; claims grounded in evidence.
+  * **Completeness** - LLM 1-5; sub-question fully addressed.
+  * **Consistency** - deterministic score from :class:`~research_assistant.graph.state.ConflictReport`.
 
 Routes the LangGraph: retry retrieval + synthesis when the critique fails and
-attempt budget remains; otherwise force-pass and advance (issues recorded).
+attempt budget remains; otherwise force-pass with explicit conflict notes when
+sources disagree.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -22,6 +24,7 @@ from pydantic import BaseModel, Field
 from research_assistant.agents._llm import invoke_structured_llm
 from research_assistant.config import get_settings
 from research_assistant.graph.state import (
+    ConflictItem,
     Critique,
     ResearchState,
     StepLog,
@@ -97,12 +100,45 @@ def paragraph_citation_coverage(text: str) -> float:
     return paragraph_citation_stats(text)[0]
 
 
+def consistency_score_from_conflicts(items: Sequence[ConflictItem]) -> int:
+    """Map pre-critic conflict severities to a 1-5 consistency rubric.
+
+    **Use when** grading cross-source agreement before shipping the draft.
+    Empty list → 5 (no known disagreements). Highest severity dominates.
+    """
+    if not items:
+        return 5
+    has_high = any(x.severity == "high" for x in items)
+    has_medium = any(x.severity == "medium" for x in items)
+    if has_high:
+        return 2
+    if has_medium:
+        return 3
+    return 4
+
+
+def _axis_meets_bar(score: int, minimum: float) -> bool:
+    return score + 1e-9 >= minimum
+
+
 class _CritiqueDraft(BaseModel):
-    """Loose structured output from the Critic LLM."""
+    """Structured output from the Critic LLM (faithfulness + completeness + gate)."""
 
     addresses_sub_question: bool = Field(
         ...,
-        description="True if the draft directly answers the sub-question using the evidence.",
+        description="True if the draft fully addresses the sub-question scope.",
+    )
+    faithfulness_score: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        description="1-5: claims are supported by the cited evidence, no overreach.",
+    )
+    completeness_score: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        description="1-5: all important aspects of the sub-question are covered.",
     )
     overall_score: int = Field(..., ge=1, le=5, description="1-5 holistic quality.")
     should_pass: bool = Field(
@@ -123,24 +159,67 @@ def _merge_pass(
     *,
     det_cov: float,
     llm: _CritiqueDraft,
-    threshold: float,
+    citation_threshold: float,
+    consistency_score: int,
+    min_faithfulness: float,
+    min_completeness: float,
+    min_consistency: float,
 ) -> tuple[bool, list[str]]:
-    """Combine deterministic coverage with LLM judgment."""
+    """Combine citation, LLM axes, and deterministic consistency."""
     reasons: list[str] = []
-    cov_ok = det_cov + 1e-9 >= threshold
+    cov_ok = det_cov + 1e-9 >= citation_threshold
     if not cov_ok:
         reasons.append(
-            f"citation_coverage_below_{int(threshold * 100)}_pct (paragraph_metric={det_cov:.2f})",
+            f"citation_coverage_below_{int(citation_threshold * 100)}_pct (paragraph_metric={det_cov:.2f})",
         )
     if not llm.addresses_sub_question:
         reasons.append("does_not_address_sub_question")
+    if not _axis_meets_bar(llm.faithfulness_score, min_faithfulness):
+        reasons.append(
+            f"faithfulness_below_min (score={llm.faithfulness_score}, min={min_faithfulness:g})",
+        )
+    if not _axis_meets_bar(llm.completeness_score, min_completeness):
+        reasons.append(
+            f"completeness_below_min (score={llm.completeness_score}, min={min_completeness:g})",
+        )
+    if not _axis_meets_bar(consistency_score, min_consistency):
+        reasons.append(
+            f"consistency_below_min (score={consistency_score}, min={min_consistency:g})",
+        )
     if llm.overall_score < 4:
         reasons.append(f"overall_score_below_4 (score={llm.overall_score})")
     if not llm.should_pass:
         reasons.append("llm_should_pass_false")
 
-    merged = cov_ok and llm.addresses_sub_question and llm.overall_score >= 4 and llm.should_pass
+    merged = (
+        cov_ok
+        and llm.addresses_sub_question
+        and _axis_meets_bar(llm.faithfulness_score, min_faithfulness)
+        and _axis_meets_bar(llm.completeness_score, min_completeness)
+        and _axis_meets_bar(consistency_score, min_consistency)
+        and llm.overall_score >= 4
+        and llm.should_pass
+    )
     return merged, reasons
+
+
+def _forced_pass_conflict_block(conflicts: Sequence[ConflictItem]) -> list[str]:
+    """Append human-visible notes when advancing despite unresolved source tension."""
+    if not conflicts:
+        return []
+    lines = [
+        "forced_pass_with_active_conflicts: reconcile or explicitly disclose source disagreements.",
+    ]
+    for c in conflicts:
+        if c.severity in ("high", "medium"):
+            lines.append(f"conflict_{c.severity}: {c.summary}")
+    return lines
+
+
+def _conflicts_for_subq(state: ResearchState, sub_q_id: str) -> list[ConflictItem]:
+    """Copy pre-critic cross-source conflicts into the critique payload."""
+    rep = state.get("conflict_reports", {}).get(sub_q_id)
+    return list(rep.items) if rep else []
 
 
 @observe(name="critic", as_type="span", capture_input=False, capture_output=False)
@@ -188,16 +267,23 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
             ],
         }
 
+    conflict_rows = _conflicts_for_subq(state, sub_q.id)
+    consistency = consistency_score_from_conflicts(conflict_rows)
+
     if not critic_on:
         critique = Critique(
             sub_question_id=sub_q.id,
             passed=True,
             forced_pass=False,
             overall_score=5,
+            faithfulness_score=5,
+            completeness_score=5,
+            consistency_score=consistency,
             paragraph_citation_coverage=paragraph_citation_coverage(draft.content),
             addresses_sub_question=True,
             issues=[],
             suggested_fixes=[],
+            conflicts=conflict_rows,
             model="(disabled)",
             tokens_in=0,
             tokens_out=0,
@@ -230,7 +316,6 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
     det_cov = paragraph_citation_coverage(draft.content)
     attempt = int(state.get("critic_attempts", {}).get(sub_q.id, 0))
     max_attempts = settings.critic_max_attempts_per_sub_question
-    # attempt is 0 on first critique after first synthesis; retry bumps it in-router.
     tries_left = max(0, max_attempts - attempt - 1)
 
     cost_before = state.get("total_cost_usd", 0.0)
@@ -248,6 +333,8 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
             draft=draft,
             evidence=evidence_list,
             paragraph_citation_coverage=round(det_cov, 4),
+            conflict_report=state.get("conflict_reports", {}).get(sub_q.id),
+            consistency_score=consistency,
         )
         llm_draft, result = invoke_structured_llm(
             model=settings.anthropic_planner_model,
@@ -256,7 +343,7 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
             cacheable_user_prefix=cacheable_prefix,
             schema=_CritiqueDraft,
             temperature=0.0,
-            max_tokens=768,
+            max_tokens=896,
             current_cost_usd=cost_before,
             per_query_cap_usd=cap,
         )
@@ -267,10 +354,14 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
             passed=True,
             forced_pass=True,
             overall_score=3,
+            faithfulness_score=3,
+            completeness_score=3,
+            consistency_score=consistency,
             paragraph_citation_coverage=det_cov,
             addresses_sub_question=True,
-            issues=[f"critic_error: {exc}"],
+            issues=[f"critic_error: {exc}", *_forced_pass_conflict_block(conflict_rows)],
             suggested_fixes=[],
+            conflicts=conflict_rows,
             model="(error)",
             tokens_in=0,
             tokens_out=0,
@@ -295,7 +386,11 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
     merged_pass, merge_reasons = _merge_pass(
         det_cov=det_cov,
         llm=llm_draft,
-        threshold=settings.critic_min_paragraph_citation_coverage,
+        citation_threshold=settings.critic_min_paragraph_citation_coverage,
+        consistency_score=consistency,
+        min_faithfulness=settings.critic_min_faithfulness,
+        min_completeness=settings.critic_min_completeness,
+        min_consistency=settings.critic_min_consistency,
     )
     forced = False
     retry = False
@@ -309,15 +404,25 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
         passed = True
         forced = True
 
+    issue_tail: list[str] = []
+    if not merged_pass:
+        issue_tail = list(merge_reasons)
+    if forced:
+        issue_tail = [*issue_tail, *_forced_pass_conflict_block(conflict_rows)]
+
     critique = Critique(
         sub_question_id=sub_q.id,
         passed=passed,
         forced_pass=forced,
         overall_score=llm_draft.overall_score,
+        faithfulness_score=llm_draft.faithfulness_score,
+        completeness_score=llm_draft.completeness_score,
+        consistency_score=consistency,
         paragraph_citation_coverage=det_cov,
         addresses_sub_question=llm_draft.addresses_sub_question,
-        issues=[*llm_draft.issues, *([] if merged_pass else merge_reasons)],
+        issues=[*llm_draft.issues, *issue_tail],
         suggested_fixes=list(llm_draft.suggested_fixes),
+        conflicts=conflict_rows,
         model=result.model,
         tokens_in=result.tokens_in,
         tokens_out=result.tokens_out,
@@ -335,6 +440,9 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
             "forced_pass": forced,
             "retry": retry,
             "paragraph_citation_coverage": det_cov,
+            "faithfulness_score": llm_draft.faithfulness_score,
+            "completeness_score": llm_draft.completeness_score,
+            "consistency_score": consistency,
             "overall_score": llm_draft.overall_score,
         },
         metadata={
@@ -365,7 +473,9 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
                         "passed": False,
                         "retry": True,
                         "paragraph_citation_coverage": round(det_cov, 4),
-                        "overall_score": llm_draft.overall_score,
+                        "faithfulness_score": llm_draft.faithfulness_score,
+                        "completeness_score": llm_draft.completeness_score,
+                        "consistency_score": consistency,
                     },
                 ),
             ],
@@ -389,6 +499,9 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
                     "passed": True,
                     "forced_pass": forced,
                     "paragraph_citation_coverage": round(det_cov, 4),
+                    "faithfulness_score": llm_draft.faithfulness_score,
+                    "completeness_score": llm_draft.completeness_score,
+                    "consistency_score": consistency,
                     "overall_score": llm_draft.overall_score,
                 },
             ),

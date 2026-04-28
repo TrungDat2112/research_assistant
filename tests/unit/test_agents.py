@@ -16,6 +16,8 @@ from research_assistant.agents.planner import _PlanDraft, _PlanItemDraft, planne
 from research_assistant.agents.reporter import build_report, reporter_node
 from research_assistant.agents.synthesizer import synthesize_one, synthesizer_node
 from research_assistant.graph.state import (
+    ConflictItem,
+    Critique,
     Draft,
     Evidence,
     SearchHit,
@@ -133,7 +135,7 @@ def test_planner_tightens_planned_cap_when_critic_overridden_off(
     st = new_state("Explain RAG")
     st["critic_enabled_override"] = False
     update = planner_node(st)
-    # max(8, 3 sub-questions × 1 attempt) — no Critic retries budgeted.
+    # max(8, 3 sub-questions x 1 attempt) — no Critic retries budgeted.
     assert update["trace"][0].details["planned_max_iterations"] == 8
     assert update["max_iterations"] == 8
 
@@ -260,6 +262,111 @@ def test_reporter_renumbers_citations_globally() -> None:
     assert "Fact D [^5]" in report
     # References list should have 5 entries (2 + 3).
     assert report.count("](https://example.com/") == 5
+
+
+def _minimal_critique(
+    *,
+    sub_id: str,
+    conflicts: list[ConflictItem],
+) -> Critique:
+    return Critique(
+        sub_question_id=sub_id,
+        passed=True,
+        forced_pass=False,
+        overall_score=4,
+        faithfulness_score=4,
+        completeness_score=4,
+        consistency_score=4,
+        paragraph_citation_coverage=1.0,
+        addresses_sub_question=True,
+        issues=[],
+        suggested_fixes=[],
+        conflicts=conflicts,
+        model="m",
+        tokens_in=0,
+        tokens_out=0,
+        cost_usd=0.0,
+    )
+
+
+def test_reporter_conflicts_noted_for_medium_or_high() -> None:
+    plan = [SubQuestion(id="sq_1", question="Compare A vs B?")]
+    evidence = {"sq_1": _evidence("sq_1", 1)}
+    drafts = {"sq_1": Draft(sub_question_id="sq_1", content="Text [^1].", model="m")}
+    critiques = {
+        "sq_1": _minimal_critique(
+            sub_id="sq_1",
+            conflicts=[
+                ConflictItem(
+                    summary="Sources disagree on latency numbers",
+                    severity="medium",
+                    involved_ref_labels=["ev_sq_1_1"],
+                ),
+            ],
+        ),
+    }
+    report = build_report(
+        query="Q",
+        output_language="en",
+        plan=plan,
+        drafts=drafts,
+        evidence=evidence,
+        total_cost_usd=0.0,
+        critiques=critiques,
+    )
+    assert "## Conflicts noted" in report
+    assert "latency numbers" in report
+    assert "[medium]" in report
+
+
+def test_reporter_skips_conflicts_noted_for_low_only() -> None:
+    plan = [SubQuestion(id="sq_1", question="What is X?")]
+    evidence = {"sq_1": _evidence("sq_1", 1)}
+    drafts = {"sq_1": Draft(sub_question_id="sq_1", content="Y [^1].", model="m")}
+    critiques = {
+        "sq_1": _minimal_critique(
+            sub_id="sq_1",
+            conflicts=[
+                ConflictItem(
+                    summary="Minor rounding only",
+                    severity="low",
+                    involved_ref_labels=[],
+                ),
+            ],
+        ),
+    }
+    report = build_report(
+        query="Q",
+        output_language="en",
+        plan=plan,
+        drafts=drafts,
+        evidence=evidence,
+        total_cost_usd=0.0,
+        critiques=critiques,
+    )
+    assert "## Conflicts noted" not in report
+
+
+def test_reporter_reference_lines_strip_newlines_in_title() -> None:
+    plan = [SubQuestion(id="sq_1", question="What is Z?")]
+    bad_title = SearchHit(
+        url="https://example.com/1",  # type: ignore[arg-type]
+        title="Broken\nTitle\nHere",
+        snippet="s",
+    )
+    evidence = {"sq_1": [Evidence(ref_label="ev_sq_1_1", sub_question_id="sq_1", hit=bad_title)]}
+    drafts = {"sq_1": Draft(sub_question_id="sq_1", content="Z [^1].", model="m")}
+    report = build_report(
+        query="Main Q",
+        output_language="en",
+        plan=plan,
+        drafts=drafts,
+        evidence=evidence,
+        total_cost_usd=0.0,
+    )
+    ref_line = next(ln for ln in report.splitlines() if ln.startswith("[^1]:"))
+    assert "\n" not in ref_line
+    assert "Broken Title Here" in ref_line
 
 
 def test_reporter_node_writes_final_report() -> None:

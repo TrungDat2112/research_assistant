@@ -6,7 +6,7 @@ only component allowed to generate prose, so the Reporter's job is purely:
   1. Renumber per-sub-question ``[^N]`` citation markers into a single
      globally consistent ``[^K]`` sequence across the whole report.
   2. Render :mod:`prompts.reporter_v1.jinja` with plan, drafts, evidence,
-     and metadata.
+     critiques-derived ``conflicts_noted`` (medium/high), and metadata.
 
 Keeping this deterministic means zero hallucination risk at the final step
 and zero token cost — the Reporter is free to run in CI / regression tests.
@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from research_assistant.graph.state import (
+    Critique,
     Draft,
     Evidence,
     ResearchState,
@@ -33,6 +34,32 @@ from research_assistant.prompts.loader import render
 logger = logging.getLogger(__name__)
 
 _LOCAL_MARKER_RE = re.compile(r"\[\^(\d+)\]")
+
+
+def _conflicts_noted_rows(
+    plan: list[SubQuestion],
+    critiques: dict[str, Critique],
+) -> list[dict[str, str]]:
+    """Flatten medium/high conflicts for the final report (Tuần 4 reporter)."""
+    rows: list[dict[str, str]] = []
+    for sq in plan:
+        cr = critiques.get(sq.id)
+        if cr is None:
+            continue
+        for it in cr.conflicts:
+            if it.severity not in ("medium", "high"):
+                continue
+            refs = ", ".join(it.involved_ref_labels) if it.involved_ref_labels else ""
+            rows.append(
+                {
+                    "sub_question_id": sq.id,
+                    "sub_question": sq.question.replace("\n", " ").strip(),
+                    "severity": it.severity,
+                    "summary": it.summary.replace("\n", " ").strip(),
+                    "refs": refs,
+                },
+            )
+    return rows
 
 
 def _renumber_draft_content(
@@ -72,6 +99,7 @@ def build_report(
     total_cost_usd: float,
     generated_at: datetime | None = None,
     trace_url: str | None = None,
+    critiques: dict[str, Critique] | None = None,
 ) -> str:
     """Pure-function variant — used by tests and the graph node alike.
 
@@ -96,6 +124,9 @@ def build_report(
             renumbered_drafts[sq.id] = draft.model_copy(update={"content": rewritten})
         offset += len(evs)
 
+    crit_map = critiques or {}
+    conflicts_noted = _conflicts_noted_rows(plan, crit_map)
+
     return render(
         "reporter_v1.jinja",
         query=query,
@@ -106,6 +137,7 @@ def build_report(
         generated_at_iso=generated_at.isoformat(timespec="seconds"),
         total_cost_usd=total_cost_usd,
         trace_url=trace_url,
+        conflicts_noted=conflicts_noted,
     )
 
 
@@ -128,6 +160,7 @@ def reporter_node(state: ResearchState) -> dict[str, Any]:
             evidence=dict(state.get("evidence", {})),
             total_cost_usd=state.get("total_cost_usd", 0.0),
             trace_url=state.get("trace_url"),
+            critiques=dict(state.get("critiques", {})),
         )
     except Exception as exc:
         logger.exception("Reporter failed; emitting minimal fallback report.")

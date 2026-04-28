@@ -62,12 +62,14 @@ d:\research-assistant\
 │   │   ├── _llm.py               # ChatAnthropic wrapper + cost estimator + generation spans
 │   │   ├── planner.py            # Sonnet 4.5 structured output → SubQuestion[]; @observe span
 │   │   ├── synthesizer.py        # Haiku 4.5 → Draft với [^N] citations; @observe span
+│   │   ├── compare_sources.py    # node: ConflictReport before critic; ADR-028
 │   │   ├── critic.py             # Sonnet structured Critique; retry vs advance; @observe span
 │   │   └── reporter.py           # deterministic Jinja render + trace_url footer; @observe span
 │   ├── tools/
 │   │   ├── web_search.py         # Tavily wrapper + fallback ladder; @observe tool span
 │   │   ├── academic_search.py    # arXiv metadata → SearchHit; @observe
 │   │   ├── fetch_pdf.py          # arXiv id / .pdf URL → Document; httpx + cache + pymupdf
+│   │   ├── compare_sources.py    # numeric/unit heuristic + optional Sonnet; ADR-028
 │   │   ├── router.py             # rule-based intent → ToolPlan; ADR-027
 │   │   └── vector_search.py     # hybrid BM25 + dense → SearchHit; @observe
 │   ├── graph/
@@ -236,11 +238,11 @@ d:\research-assistant\
 
 #### C. Synthesis quality (mục 6–8)
 
-6. [ ] **`compare_sources`** (`src/research_assistant/tools/compare_sources.py`): mode `heuristic` (regex số/đơn vị) + `llm` (Sonnet structured); chạy trước Critic; output `ConflictReport` → `Critique.conflicts`. Settings `compare_sources_mode: Literal["off","heuristic","auto"]="auto"`. ADR-028.
+6. [x] **`compare_sources`** (`src/research_assistant/tools/compare_sources.py`): mode `heuristic` (regex số/đơn vị) + `llm` (Sonnet structured); chạy trước Critic; output `ConflictReport` → `Critique.conflicts`. Settings `compare_sources_mode: Literal["off","heuristic","auto"]="auto"`. ADR-028.
 
-7. [ ] **Critic 4 trục** (mở rộng `agents/critic.py`): faithfulness (LLM) + completeness + citation coverage (heuristic) + consistency (từ `ConflictReport`); `critic_min_faithfulness=4.0`. Retry như cũ; forced_pass kèm conflict block.
+7. [x] **Critic 4 trục** (mở rộng `agents/critic.py`): faithfulness (LLM) + completeness (LLM) + citation coverage (heuristic) + consistency (từ `ConflictReport`); `critic_min_faithfulness` / `critic_min_completeness` / `critic_min_consistency` (mặc định 4.0). Retry như cũ; forced_pass kèm conflict block. ADR-030.
 
-8. [ ] **Reporter** (`prompts/reporter_v1.jinja` + `agents/reporter.py`): References mỗi entry **một dòng**; section optional `## Conflicts noted` khi có conflict severity ≥ medium.
+8. [x] **Reporter** (`prompts/reporter_v1.jinja` + `agents/reporter.py`): References mỗi entry **một dòng**; section optional `## Conflicts noted` khi có conflict severity ≥ medium. ADR-031.
 
 #### D. Eval & docs (mục 9–12)
 
@@ -248,7 +250,7 @@ d:\research-assistant\
 
 10. [ ] **Smoke A/B mới**: `week1_smoke.py --with-router --with-compare-sources`; JSON ghi `router_plan_per_subq`, `n_conflicts`.
 
-11. [ ] **ADR**: ADR-028 (compare_sources), ADR-029 (factuality eval); `.env.example` thêm `COMPARE_SOURCES_MODE`.
+11. [ ] **ADR**: ADR-029 (factuality eval). *(ADR-028 + `.env.example` `COMPARE_SOURCES_MODE` ✓ session 2026-04-28.)*
 
 12. [ ] **Docs**: cập nhật `PLAN.md §10 Tuần 4`, `PROGRESS.md` (log + checklist tick).
 
@@ -475,6 +477,27 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`eval/retrieval.py`**: `iter_source_ids_reranked`, `run_rerank_retrieval_eval`.
 - **`scripts/run_retrieval_eval.py`**: `--with-rerank`, `--candidate-pool`, in A/B + `ab_delta`.
 - **Next**: mục 4 (citation coverage batch).
+
+### 2026-04-28 — Session 32 (Tuần 4 — Reporter / ADR-031)
+- **`build_report(..., critiques=...)`** → `conflicts_noted` (medium/high); **`reporter_v1.jinja`**: `## Conflicts noted`, References `title | replace('\n',' ')`.
+- **DECISIONS.md** ADR-031; **PROGRESS** tick mục 8.
+
+- **Next**: Tuần 4 D — factuality eval, smoke flags, docs.
+
+### 2026-04-28 — Session 31 (Tuần 4 — Critic 4 trục / ADR-030)
+- **`Critique`**: `faithfulness_score`, `completeness_score`, `consistency_score`; merge gate + **forced_pass** kèm `forced_pass_with_active_conflicts` / `conflict_{severity}` (medium+).
+- **`consistency_score_from_conflicts`**; Settings `critic_min_faithfulness` / `critic_min_completeness` / `critic_min_consistency` (mặc định 4.0); prompts `critic_system_v1` + `critic_user_rest_v1` (`consistency_score`).
+- **DECISIONS.md** ADR-030; **`.env.example`** `CRITIC_MIN_*`.
+
+- **Next**: Tuần 4 mục 8 — Reporter (`## Conflicts noted`, References một dòng).
+
+### 2026-04-28 — Session 30 (Tuần 4 — compare_sources / ADR-028)
+- **`ConflictItem` / `ConflictReport`**, state `conflict_reports`; **`Critique.conflicts`**; graph **synthesizer → compare_sources → critic**.
+- **`tools/compare_sources.py`**: heuristic numeric/unit + `auto` → Sonnet structured k comparative hoặc có heuristic hit; prompts `compare_sources_*_v1.jinja`.
+- **Config** `compare_sources_mode`; **`.env.example`** `COMPARE_SOURCES_MODE`; **DECISIONS.md** ADR-028.
+- **Tests**: `test_compare_sources.py` (+ graph/config/state/prompts touch). **`pytest`** full suite sau khi merge.
+
+- **Next**: *(đã làm Session 31 — Critic 4 trục.)*
 
 ### 2026-04-28 — Session 29 (Planner suggested_tools advisory)
 - **Prompt** `planner_v1.jinja` + **`_PlanItemDraft.suggested_tools`**: gợi ý công cụ; **`sanitize_planner_suggested_tools`**; retrieval log conflict vs router.

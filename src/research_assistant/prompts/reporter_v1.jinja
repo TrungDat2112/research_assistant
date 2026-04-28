@@ -5,8 +5,10 @@
 {#   plan: list[SubQuestion]                                           #}
 {#   drafts: dict[sub_q_id, Draft]                                     #}
 {#   evidence: dict[sub_q_id, list[Evidence]]                          #}
+{#   conflicts_noted: list[dict] (medium/high; Critique.conflicts)       #}
 {#   generated_at_iso: str                                             #}
 {#   total_cost_usd: float                                             #}
+{#   trace_url: optional str                                           #}
 {% set is_vi = (output_language == "vi") -%}
 # {{ query }}
 
@@ -50,6 +52,21 @@ The original question was decomposed into {{ plan|length }} sub-questions:
 
 {% endfor %}
 
+{% if conflicts_noted %}
+## Conflicts noted
+
+{% if is_vi -%}
+Các mục dưới đây ghi nhận **mâu thuẫn giữa nguồn** (mức medium trở lên); đối chiếu với các mục trên và phần tham khảo.
+{%- else -%}
+The items below flag **cross-source disagreements** (medium severity or higher); cross-check with the sections above and References.
+{%- endif %}
+
+{% for row in conflicts_noted %}
+- **[{{ row.severity }}]** {{ row.sub_question }} — {{ row.summary }}{% if row.refs %} (refs: {{ row.refs }}){% endif %}
+{% endfor %}
+
+{% endif %}
+
 ---
 
 ## {% if is_vi %}Tài liệu tham khảo{% else %}References{% endif %}
@@ -58,8 +75,8 @@ The original question was decomposed into {{ plan|length }} sub-questions:
 {% for sq in plan -%}
 {% for ev in evidence.get(sq.id, []) -%}
 {% set ns.counter = ns.counter + 1 -%}
-[^{{ ns.counter }}]: [{{ ev.hit.title }}]({{ ev.hit.url }}){% if ev.hit.published_date %} — {{ ev.hit.published_date }}{% endif %}
-{% endfor -%}
+[^{{ ns.counter }}]: [{{ ev.hit.title | replace('\n', ' ') | trim }}]({{ ev.hit.url }}){% if ev.hit.published_date %} — {{ ev.hit.published_date }}{% endif %}
+{%- endfor -%}
 {% endfor %}
 
 {% set has_trace = (trace_url is defined) and trace_url -%}

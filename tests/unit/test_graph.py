@@ -92,6 +92,7 @@ def _synthesizer_stub_factory() -> Any:
 def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CRITIC_ENABLED", "false")
     monkeypatch.setenv("TOOL_ROUTER_ENABLED", "false")
+    monkeypatch.setenv("COMPARE_SOURCES_MODE", "heuristic")
     get_settings.cache_clear()
     planner_stub = _structured_planner_stub()
     synth_stub, synth_counter = _synthesizer_stub_factory()
@@ -123,13 +124,22 @@ def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     assert final["max_iterations"] == 8
     # Trace should include every node at least once.
     nodes = {step.node for step in final["trace"]}
-    assert {"planner", "retriever", "synthesizer", "critic", "reporter", "tick"} <= nodes
+    assert {
+        "planner",
+        "retriever",
+        "synthesizer",
+        "compare_sources",
+        "critic",
+        "reporter",
+        "tick",
+    } <= nodes
     assert final.get("max_iterations_reached") is False
 
 
 def test_graph_respects_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CRITIC_ENABLED", "false")
     monkeypatch.setenv("TOOL_ROUTER_ENABLED", "false")
+    monkeypatch.setenv("COMPARE_SOURCES_MODE", "heuristic")
     get_settings.cache_clear()
     planner_stub = _structured_planner_stub()
     synth_stub, _ = _synthesizer_stub_factory()

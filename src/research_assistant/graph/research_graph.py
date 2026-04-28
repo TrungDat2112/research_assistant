@@ -1,4 +1,4 @@
-"""LangGraph wiring for the research pipeline (planner → retrieve → synthesize → critic).
+"""LangGraph wiring for the research pipeline (planner → retrieve → synthesize → compare → critic).
 
 Topology::
 
@@ -12,6 +12,10 @@ Topology::
                          ▼                   │ retry / more sub-qs
                     ┌──────────┐             │
                     │synthesiz.│             │
+                    └────┬─────┘             │
+                         ▼                   │
+                    ┌──────────┐             │
+                    │ compare  │             │
                     └────┬─────┘             │
                          ▼                   │
                     ┌──────────┐             │
@@ -47,6 +51,7 @@ from typing import Any, Literal, cast
 
 from langgraph.graph import END, START, StateGraph
 
+from research_assistant.agents.compare_sources import compare_sources_node
 from research_assistant.agents.critic import critic_node, critic_route_edge
 from research_assistant.agents.planner import planner_node
 from research_assistant.agents.reporter import reporter_node
@@ -500,6 +505,7 @@ def build_graph(
     # LangGraph's structural node type as cleanly as module-level nodes.
     builder.add_node("retriever", retriever_node)  # type: ignore[arg-type]
     builder.add_node("synthesizer", synthesizer_node)
+    builder.add_node("compare_sources", compare_sources_node)
     builder.add_node("critic", critic_node)
     builder.add_node("tick", _tick_node)
     builder.add_node("reporter", reporter_node)
@@ -507,7 +513,8 @@ def build_graph(
     builder.add_edge(START, "planner")
     builder.add_edge("planner", "retriever")
     builder.add_edge("retriever", "synthesizer")
-    builder.add_edge("synthesizer", "critic")
+    builder.add_edge("synthesizer", "compare_sources")
+    builder.add_edge("compare_sources", "critic")
     builder.add_conditional_edges(
         "critic",
         critic_route_edge,

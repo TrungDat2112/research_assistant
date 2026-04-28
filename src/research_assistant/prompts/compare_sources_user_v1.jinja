@@ -1,0 +1,32 @@
+Sub-question:
+<<<
+{{ sub_question.question }}
+>>>
+
+Rationale (may be empty):
+<<<
+{{ sub_question.rationale }}
+>>>
+
+Draft answer (synthesized; for context only):
+<<<
+{{ draft.content[:4000] }}
+>>>
+
+Evidence rows (ref_label → title, URL, snippet):
+{% for ev in evidence %}
+- {{ ev.ref_label }} | {{ ev.hit.title }} | {{ ev.hit.url }}
+  Snippet: {{ ev.hit.snippet | trim }}
+
+{% endfor %}
+
+Heuristic numeric mismatches (may contain false positives — validate):
+{% if heuristic_items %}
+{% for h in heuristic_items %}
+* [{{ h.severity }}] {{ h.summary }} | refs={{ h.involved_ref_labels | join(', ') }} | {{ h.detail }}
+{% endfor %}
+{% else %}
+(none)
+{% endif %}
+
+Return JSON matching the schema: {"conflicts": [...]}.

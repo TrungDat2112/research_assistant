@@ -427,6 +427,42 @@
   - Span / `StepLog`: ghi `router_intent`, `router_tools`, `n_academic`.
 - **Hệ quả**: Có thể tắt router qua env để A/B; tests graph dùng `TOOL_ROUTER_ENABLED=false` khi cần hành vi legacy mà không mock `academic_search`.
 
+## ADR-028: ``compare_sources`` — heuristic numbers/units + optional Sonnet before Critic
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Context**: Tuần 4 (PROGRESS) cần phát hiện mâu thuẫn giữa nguồn trước khi Critic chấm; giảm hallucination “average” giữa snippet; cân cost LLM.
+- **Quyết định**:
+  - Module ``tools/compare_sources.py``: **heuristic** trích số + đơn vị (regex), đối chiếu cặp evidence khác ``url``; phát hiện lệch ngưỡng theo loại đơn vị (``pct``, ``_unitless``, scale ``million``/``billion``, v.v.).
+  - Chế độ ``Settings.compare_sources_mode``: ``off`` \| ``heuristic`` \| ``auto`` (mặc định **auto**). Trong ``auto``: luôn chạy heuristic; gọi **Sonnet structured** (cùng model Planner) khi heuristic có bất kỳ conflict nào **hoặc** ``classify_intent`` = ``comparative`` (ADR-027). Khi LLM trả về rỗng, giữ bản heuristic (conservative).
+  - LangGraph: node ``compare_sources`` ngay sau ``synthesizer``, trước ``critic``; state ``conflict_reports: dict[sub_q_id, ConflictReport]``.
+  - ``Critique`` thêm ``conflicts: list[ConflictItem]`` (sao chép từ report); prompt Critic (``critic_user_rest_v1``) có khối conflicts để trục consistency.
+- **Hệ quả**: Thêm ~1 span/sub-q; ``auto`` có thể thêm 1 structured call/sub-q khi comparative hoặc có numeric mismatch — đo cost trong smoke Tuần 4.
+
+## ADR-030: Critic bốn trục — faithfulness / completeness / citation / consistency
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Context**: PROGRESS Tuần 4 mục 7; ADR-028 đã đưa `ConflictReport` vào pipeline. Critic cần chấm rõ ràng từng trục thay vì chỉ `overall_score`.
+- **Quyết định**:
+  - **Structured LLM** (`_CritiqueDraft`): `faithfulness_score`, `completeness_score`, `overall_score` (1–5), `addresses_sub_question`, `should_pass`, `issues`, `suggested_fixes`.
+  - **Citation**: giữ metric deterministic đoạn+`[^N]` + ngưỡng `critic_min_paragraph_citation_coverage`.
+  - **Consistency**: hàm `consistency_score_from_conflicts` — không conflict → 5; chỉ `low` → 4; có `medium` → 3; có `high` → 2.
+  - **Pass** (trước retry/forced): tất cả: coverage OK, `addresses_sub_question`, `faithfulness_score >= critic_min_faithfulness`, `completeness_score >= critic_min_completeness`, `consistency_score >= critic_min_consistency`, `overall_score >= 4`, `should_pass`.
+  - **forced_pass**: vẫn advance khi hết attempt; **ghi thêm** khối `forced_pass_with_active_conflicts` + dòng `conflict_{severity}` cho medium/high trong `Critique.issues`.
+  - **Model** `Critique`: thêm `faithfulness_score`, `completeness_score`, `consistency_score` để trace/reporter.
+- **Hệ quả**: Sub-question có nguồn mâu thuẫn (consistency 2–3) thường fail cho tới khi Synthesizer xử lý hoặc hết retry; tune `critic_min_consistency` nếu quá cứng.
+
+## ADR-031: Reporter — một dòng/Reference + mục Conflicts noted
+
+- **Ngày**: 2026-04-28
+- **Trạng thái**: Accepted
+- **Context**: PROGRESS Tuần 4 mục 8; độc giả cần thấy mâu thuẫn nguồn rõ và danh sách tham khảo không bị xuống dòng giữa tiêu đề.
+- **Quyết định**:
+  - **References**: mỗi mục một dòng Markdown; chuẩn hoá `title` bằng `replace('\\n', ' ')` trong template.
+  - **Conflicts noted**: sau phần nội dung sub-question, render `## Conflicts noted` khi có ít nhất một `ConflictItem` với `severity in {medium, high}` trong `Critique.conflicts` (theo thứ tự `plan`).
+- **Hệ quả**: Low-severity-only không làm phình báo cáo; đồng bộ với khối Critic forced_pass.
+
 ---
 
 <!-- Template cho entry mới:

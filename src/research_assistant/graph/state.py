@@ -118,8 +118,44 @@ class Draft(BaseModel):
     cost_usd: float = Field(default=0.0, ge=0.0)
 
 
+ConflictSeverity = Literal["low", "medium", "high"]
+
+
+class ConflictItem(BaseModel):
+    """One detected disagreement between evidence rows (ADR-028)."""
+
+    summary: str = Field(..., min_length=3, description="Short description of the conflict.")
+    severity: ConflictSeverity = Field(
+        ...,
+        description="Heuristic severities are conservative; LLM may downgrade with rationale.",
+    )
+    involved_ref_labels: list[str] = Field(
+        default_factory=list,
+        description="Evidence ref_labels (ev_sq_*_*) touched by the disagreement.",
+    )
+    detection: Literal["heuristic", "llm"] = Field(
+        default="heuristic",
+        description="Whether this row originated from regex/number rules or Sonnet structured pass.",
+    )
+    detail: str = Field(
+        default="",
+        description="Optional excerpt: numbers, spans, or judge note (keep short for traces).",
+    )
+
+
+class ConflictReport(BaseModel):
+    """Bundled conflicts for a single sub-question before the Critic runs."""
+
+    sub_question_id: str = Field(..., pattern=r"^sq_\d+$")
+    mode_used: Literal["off", "heuristic", "heuristic+llm", "llm"] = Field(
+        default="off",
+        description="Which detection path produced the (possibly empty) item list.",
+    )
+    items: list[ConflictItem] = Field(default_factory=list)
+
+
 class Critique(BaseModel):
-    """Critic verdict for one sub-question draft (Week 2 draft — LLM + deterministic checks)."""
+    """Critic verdict for one sub-question draft (4-axis rubric + deterministic citation)."""
 
     sub_question_id: str = Field(..., pattern=r"^sq_\d+$")
     passed: bool
@@ -127,7 +163,30 @@ class Critique(BaseModel):
         default=False,
         description="True when attempt budget exhausted but the graph must advance.",
     )
-    overall_score: int = Field(..., ge=1, le=5)
+    overall_score: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        description="Holistic LLM score (legacy / summary; gates use faithfulness completeness).",
+    )
+    faithfulness_score: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        description="LLM: claims grounded in cited evidence (1-5).",
+    )
+    completeness_score: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        description="LLM: sub-question scope fully covered (1-5).",
+    )
+    consistency_score: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        description="Deterministic from ConflictReport severities (1-5).",
+    )
     paragraph_citation_coverage: float = Field(
         ...,
         ge=0.0,
@@ -137,6 +196,10 @@ class Critique(BaseModel):
     addresses_sub_question: bool
     issues: list[str] = Field(default_factory=list)
     suggested_fixes: list[str] = Field(default_factory=list)
+    conflicts: list[ConflictItem] = Field(
+        default_factory=list,
+        description="Cross-source conflicts detected pre-Critic (ADR-028); informs consistency review.",
+    )
     model: str
     tokens_in: int = Field(default=0, ge=0)
     tokens_out: int = Field(default=0, ge=0)
@@ -202,6 +265,7 @@ class ResearchState(TypedDict, total=False):
 
     # Critique -----------------------------------------------------------
     critiques: Annotated[dict[str, Critique], _merge_dict]
+    conflict_reports: Annotated[dict[str, ConflictReport], _merge_dict]
     critic_attempts: Annotated[dict[str, int], _merge_dict]
     synth_critic_feedback: str | None
     critic_route_next: Literal["retriever", "tick"] | None
@@ -244,6 +308,7 @@ def new_state(
         evidence={},
         drafts={},
         critiques={},
+        conflict_reports={},
         critic_attempts={},
         synth_critic_feedback=None,
         critic_route_next=None,

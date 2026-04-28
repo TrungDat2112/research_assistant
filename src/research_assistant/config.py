@@ -13,7 +13,9 @@ Grounded in:
   * ADR-018 — default dense embedding ``BAAI/bge-m3`` (override with
     ``EMBEDDING_MODEL`` for English-only fast iteration).
   * ADR-026 — optional HyDE (hypothetical document embedding) for weak hybrid probe.
- * ADR-027 — rule-based tool router (intent → ordered retrieval tools).
+  * ADR-027 — rule-based tool router (intent → ordered retrieval tools).
+  * ADR-028 — compare_sources (heuristic + optional Sonnet) before Critic.
+  * ADR-030 — Critic four-axis rubric (faithfulness/completeness/consistency + citation).
 """
 
 from __future__ import annotations
@@ -206,6 +208,29 @@ class Settings(BaseSettings):
         le=1.0,
         description="Reject drafts when deterministic paragraph citation coverage "
         "falls below this threshold (ADR-005).",
+    )
+    critic_min_faithfulness: float = Field(
+        default=4.0,
+        ge=1.0,
+        le=5.0,
+        description="Minimum LLM faithfulness score (1-5) to pass without retry. ADR-030.",
+    )
+    critic_min_completeness: float = Field(
+        default=4.0,
+        ge=1.0,
+        le=5.0,
+        description="Minimum LLM completeness score (1-5) to pass without retry. ADR-030.",
+    )
+    critic_min_consistency: float = Field(
+        default=4.0,
+        ge=1.0,
+        le=5.0,
+        description="Minimum deterministic consistency score (from conflicts) to pass. ADR-030.",
+    )
+    compare_sources_mode: Literal["off", "heuristic", "auto"] = Field(
+        default="auto",
+        description="Cross-source conflict scan before Critic: off / regex+units only / "
+        "auto (heuristic + Sonnet when comparative or heuristic hits). ADR-028.",
     )
 
     # ---- Validators -----------------------------------------------------

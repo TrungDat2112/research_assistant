@@ -71,6 +71,8 @@ def test_new_state_has_expected_shape() -> None:
     assert state["plan"] == []
     assert state["evidence"] == {}
     assert state["drafts"] == {}
+    assert state["critiques"] == {}
+    assert state["conflict_reports"] == {}
     assert state["iterations"] == 0
     assert state["max_iterations"] == 5
     assert state["current_sub_question_index"] == 0

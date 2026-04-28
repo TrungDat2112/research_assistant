@@ -34,6 +34,10 @@ def test_defaults_do_not_require_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.hyde_enabled is False
     assert settings.tool_router_enabled is True
     assert settings.tool_router_max_tools == 3
+    assert settings.compare_sources_mode == "auto"
+    assert settings.critic_min_faithfulness == pytest.approx(4.0)
+    assert settings.critic_min_completeness == pytest.approx(4.0)
+    assert settings.critic_min_consistency == pytest.approx(4.0)
 
 
 def test_credentials_flip_flags(monkeypatch: pytest.MonkeyPatch) -> None:

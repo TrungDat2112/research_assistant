@@ -5,12 +5,13 @@ from __future__ import annotations
 import pytest
 
 from research_assistant.agents.critic import (
+    consistency_score_from_conflicts,
     critic_node,
     paragraph_citation_coverage,
     paragraph_citation_stats,
 )
 from research_assistant.config import get_settings
-from research_assistant.graph.state import Draft, SubQuestion, new_state
+from research_assistant.graph.state import ConflictItem, Draft, SubQuestion, new_state
 
 
 def test_paragraph_citation_coverage_full() -> None:
@@ -69,6 +70,33 @@ def test_paragraph_citation_stats_skip_paragraph() -> None:
     assert cov == 1.0
     assert cited == 1
     assert n == 1
+
+
+def test_consistency_score_from_conflicts() -> None:
+    assert consistency_score_from_conflicts([]) == 5
+    assert (
+        consistency_score_from_conflicts(
+                [ConflictItem(summary="low only row ok", severity="low", involved_ref_labels=["ev_sq_1_1"])],
+        )
+        == 4
+    )
+    assert (
+        consistency_score_from_conflicts(
+            [
+                ConflictItem(summary="medium severity issue", severity="medium", involved_ref_labels=[]),
+                ConflictItem(summary="low severity tail", severity="low", involved_ref_labels=[]),
+            ],
+        )
+        == 3
+    )
+    assert (
+        consistency_score_from_conflicts(
+            [
+                ConflictItem(summary="high severity block", severity="high", involved_ref_labels=[]),
+            ],
+        )
+        == 2
+    )
 
 
 def test_critic_disabled_auto_passes(monkeypatch: pytest.MonkeyPatch) -> None:

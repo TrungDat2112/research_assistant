@@ -38,6 +38,8 @@ def test_available_templates_lists_expected_files() -> None:
         "critic_user_prefix_v1.jinja",
         "critic_user_rest_v1.jinja",
         "critic_v1.jinja",
+        "compare_sources_system_v1.jinja",
+        "compare_sources_user_v1.jinja",
         "language_quality_judge_system_v1.jinja",
         "language_quality_judge_user_v1.jinja",
         "reporter_v1.jinja",
@@ -64,6 +66,7 @@ def test_critic_template_renders() -> None:
         evidence=evs,
         draft=draft,
         paragraph_citation_coverage=1.0,
+        consistency_score=5,
         output_language="en",
     )
     assert "What is LoRA?" in out
@@ -104,6 +107,7 @@ def test_reporter_template_renders_minimal_report() -> None:
         evidence=evidence,
         generated_at_iso=datetime(2026, 4, 21, tzinfo=UTC).isoformat(),
         total_cost_usd=0.12,
+        conflicts_noted=[],
     )
     assert "# Câu hỏi chính" in out
     assert "## 1. Câu hỏi 1" in out
