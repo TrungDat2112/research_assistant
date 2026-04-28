@@ -10,7 +10,11 @@ from research_assistant.agents._llm import LLMCallResult
 from research_assistant.agents.planner import _PlanDraft, _PlanItemDraft
 from research_assistant.config import get_settings
 from research_assistant.graph import research_graph as rg
-from research_assistant.graph.research_graph import _corpus_then_web_hits, build_graph
+from research_assistant.graph.research_graph import (
+    _corpus_then_web_hits,
+    _route_then_collect,
+    build_graph,
+)
 from research_assistant.graph.state import SearchHit, new_state
 
 
@@ -87,6 +91,7 @@ def _synthesizer_stub_factory() -> Any:
 
 def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CRITIC_ENABLED", "false")
+    monkeypatch.setenv("TOOL_ROUTER_ENABLED", "false")
     get_settings.cache_clear()
     planner_stub = _structured_planner_stub()
     synth_stub, synth_counter = _synthesizer_stub_factory()
@@ -124,6 +129,7 @@ def test_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_graph_respects_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CRITIC_ENABLED", "false")
+    monkeypatch.setenv("TOOL_ROUTER_ENABLED", "false")
     get_settings.cache_clear()
     planner_stub = _structured_planner_stub()
     synth_stub, _ = _synthesizer_stub_factory()
@@ -225,3 +231,44 @@ def test_corpus_five_hits_skips_web_call() -> None:
     assert stats["n_corpus"] == 5
     assert stats["n_web"] == 0
     assert stats["retrieval_path"] == "corpus_only"
+
+
+def test_route_then_collect_academic_invokes_academic_before_vector() -> None:
+    order: list[str] = []
+
+    def _v(_q: str, **kwargs: Any) -> list[SearchHit]:
+        order.append("vector")
+        _ = kwargs
+        return []
+
+    def _w(_q: str, **kwargs: Any) -> list[SearchHit]:
+        order.append("web")
+        _ = kwargs
+        return []
+
+    def _a(_q: str, **kwargs: Any) -> list[SearchHit]:
+        order.append("academic")
+        _ = kwargs
+        return [
+            SearchHit(
+                url="https://arxiv.org/abs/2401.00001",  # type: ignore[arg-type]
+                title="Paper",
+                snippet="Abstract.",
+                source="academic",
+            ),
+        ]
+
+    hits, stats = _route_then_collect(
+        "arxiv benchmark evaluation on transformers",
+        "",
+        max_results=5,
+        vector_fn=_v,
+        web_fn=_w,
+        academic_fn=_a,
+        max_router_tools=3,
+    )
+    assert stats["router_intent"] == "academic"
+    assert order[0] == "academic"
+    assert stats["n_academic"] == 1
+    assert hits[0].source == "academic"
+    assert stats["retrieval_path"].startswith("routed:academic")

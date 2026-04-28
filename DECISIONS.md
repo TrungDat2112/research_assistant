@@ -415,6 +415,20 @@
 
 ---
 
+## ADR-027: Rule-based tool router — intent → ordered retrieval tools
+
+- **Ngày**: 2026-04-27
+- **Trạng thái**: Accepted
+- **Context**: Tuần 4 (PROGRESS) cần chọn công cụ retrieval (corpus / web / arXiv metadata) theo sub-question trước khi merge pool; tránh gọi LLM cho routing ở v1.
+- **Quyết định**:
+  - Heuristic **intent** trên `question` + `SubQuestion.rationale`: `comparative` (vs / so sánh / …) → `internal_corpus` (corpus / index / Chroma / …) → `academic` (arxiv, benchmark, paper, …) → `factual` (mặc định).
+  - **ToolPlan**: thứ tự cố định theo intent (tối đa `Settings.tool_router_max_tools`, mặc định 3): factual = web → vector; academic = academic_search → vector → web; comparative = vector → academic → web; internal_corpus = vector → web.
+  - **Retriever**: khi `tool_router_enabled` (mặc định `true`), merge URL-dedup theo thứ tự plan cho tới `retrieval_candidate_pool`; khi `false`, giữ hành vi cũ `_corpus_then_web_hits` (corpus rồi web).
+  - Span / `StepLog`: ghi `router_intent`, `router_tools`, `n_academic`.
+- **Hệ quả**: Có thể tắt router qua env để A/B; tests graph dùng `TOOL_ROUTER_ENABLED=false` khi cần hành vi legacy mà không mock `academic_search`.
+
+---
+
 <!-- Template cho entry mới:
 
 ## ADR-NNN: <Tiêu đề ngắn>

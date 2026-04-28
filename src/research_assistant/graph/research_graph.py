@@ -30,7 +30,9 @@ Topology::
 
 The retriever (1) merges hybrid corpus + Tavily
 (:func:`~research_assistant.tools.vector_search.vector_search` +
-:func:`web_search_with_fallback`) up to ``retrieval_candidate_pool``; (2)
+:func:`web_search_with_fallback`) optionally with arXiv metadata
+(:func:`~research_assistant.tools.academic_search.academic_search`) per
+:class:`~research_assistant.tools.router.ToolPlan`; (2)
 re-ranks with a cross-encoder
 (:func:`~research_assistant.rag.reranker.rerank_search_hits`) to
 ``synthesizer_evidence_top_k`` (default 5) when enabled.
@@ -62,6 +64,12 @@ from research_assistant.observability import (
     flush as _lf_flush,
 )
 from research_assistant.rag.reranker import rerank_search_hits
+from research_assistant.tools.academic_search import academic_search as default_academic_search
+from research_assistant.tools.router import (
+    plan_for_sub_question,
+    retrieval_tool_plan_differs_from_planner,
+    sanitize_planner_suggested_tools,
+)
 from research_assistant.tools.vector_search import VectorSearchError, vector_search
 from research_assistant.tools.web_search import WebSearchError, web_search_with_fallback
 
@@ -69,6 +77,7 @@ logger = logging.getLogger(__name__)
 
 SearchFn = Callable[..., list[Any]]
 VectorSearchFn = Callable[..., list[SearchHit]]
+AcademicSearchFn = Callable[..., list[SearchHit]]
 RerankFn = Callable[[str, list[SearchHit]], list[SearchHit]]
 
 
@@ -118,7 +127,7 @@ def _corpus_then_web_hits(
     max_results: int,
     vector_fn: VectorSearchFn,
     web_fn: SearchFn,
-) -> tuple[list[SearchHit], dict[str, str | int]]:
+) -> tuple[list[SearchHit], dict[str, Any]]:
     """Prefer ingested corpus; add Tavily results only when slots remain (dedup by URL)."""
     try:
         corpus = vector_fn(question, top_k=max_results)
@@ -137,6 +146,7 @@ def _corpus_then_web_hits(
             "n_corpus": n_corpus_in_final,
             "n_web": 0,
             "retrieval_path": path,
+            "n_academic": 0,
         }
 
     need = max_results - len(merged)
@@ -153,6 +163,7 @@ def _corpus_then_web_hits(
             "n_corpus": n_c,
             "n_web": 0,
             "retrieval_path": "corpus_only" if n_c else "web_only",
+            "n_academic": 0,
         }
 
     for h in web_hits_raw:
@@ -176,12 +187,89 @@ def _corpus_then_web_hits(
         "n_corpus": n_corpus_in_final,
         "n_web": n_web_in_final,
         "retrieval_path": path,
+        "n_academic": 0,
+    }
+
+
+def _route_then_collect(
+    question: str,
+    rationale: str,
+    *,
+    max_results: int,
+    vector_fn: VectorSearchFn,
+    web_fn: SearchFn,
+    academic_fn: AcademicSearchFn,
+    max_router_tools: int,
+) -> tuple[list[SearchHit], dict[str, Any]]:
+    """Merge hits following :func:`plan_for_sub_question` order until pool is full."""
+    tool_plan = plan_for_sub_question(
+        question,
+        rationale,
+        max_tools=max_router_tools,
+    )
+    merged: list[SearchHit] = []
+    seen_urls: set[str] = set()
+
+    def _append_unique(raw: list[SearchHit]) -> None:
+        for h in raw:
+            u = str(h.url)
+            if u in seen_urls:
+                continue
+            seen_urls.add(u)
+            merged.append(h)
+            if len(merged) >= max_results:
+                return
+
+    for tool in tool_plan.ordered_tools:
+        need = max_results - len(merged)
+        if need <= 0:
+            break
+        chunk: list[SearchHit] = []
+        if tool == "vector_search":
+            try:
+                chunk = list(vector_fn(question, top_k=need))
+            except VectorSearchError as exc:
+                logger.warning("vector_search not available or invalid query: %s", exc)
+            except Exception:
+                logger.exception("Unexpected vector_search error during routed retrieval")
+        elif tool == "web_search":
+            try:
+                chunk = list(web_fn(question, max_results=need))
+            except WebSearchError as exc:
+                logger.warning("web_search failed: %s", exc)
+            except Exception:
+                logger.exception("Unexpected web_search error during routed retrieval")
+        elif tool == "academic_search":
+            try:
+                chunk = list(
+                    academic_fn(question, max_results=min(need, 20)),
+                )
+            except Exception as exc:
+                logger.warning("academic_search failed: %s", exc)
+        else:
+            logger.warning("Unknown routed tool id %r — skipping.", tool)
+
+        _append_unique(chunk)
+
+    n_corpus = sum(1 for h in merged if h.source == "corpus")
+    n_web = sum(1 for h in merged if h.source == "web")
+    n_academic = sum(1 for h in merged if h.source == "academic")
+    retrieval_path = f"routed:{tool_plan.intent}:{'+'.join(tool_plan.ordered_tools)}"
+    return merged[:max_results], {
+        "n_corpus": n_corpus,
+        "n_web": n_web,
+        "n_academic": n_academic,
+        "retrieval_path": retrieval_path,
+        "router_intent": tool_plan.intent,
+        "router_tools": "+".join(tool_plan.ordered_tools),
+        "router_ordered_tools": list(tool_plan.ordered_tools),
     }
 
 
 def _retriever_node_factory(
     search_fn: SearchFn,
     vector_fn: VectorSearchFn,
+    academic_fn: AcademicSearchFn,
     rerank_fn: RerankFn,
     *,
     candidate_pool: int,
@@ -207,13 +295,25 @@ def _retriever_node_factory(
             }
 
         sub_q = plan[idx]
+        settings = get_settings()
         try:
-            merged, rstats = _corpus_then_web_hits(
-                sub_q.question,
-                max_results=candidate_pool,
-                vector_fn=vector_fn,
-                web_fn=search_fn,
-            )
+            if settings.tool_router_enabled:
+                merged, rstats = _route_then_collect(
+                    sub_q.question,
+                    sub_q.rationale or "",
+                    max_results=candidate_pool,
+                    vector_fn=vector_fn,
+                    web_fn=search_fn,
+                    academic_fn=academic_fn,
+                    max_router_tools=settings.tool_router_max_tools,
+                )
+            else:
+                merged, rstats = _corpus_then_web_hits(
+                    sub_q.question,
+                    max_results=candidate_pool,
+                    vector_fn=vector_fn,
+                    web_fn=search_fn,
+                )
             n_pool = len(merged)
             try:
                 hits = rerank_fn(sub_q.question, merged)
@@ -230,6 +330,16 @@ def _retriever_node_factory(
                 }
             else:
                 rstats = {**rstats, "n_pool": n_pool, "n_after_rerank": len(hits)}
+            planner_suggested = sanitize_planner_suggested_tools(sub_q.suggested_tools)
+            if settings.tool_router_enabled:
+                router_ord = [str(x) for x in rstats.get("router_ordered_tools", [])]
+                router_overrode = retrieval_tool_plan_differs_from_planner(
+                    sub_q.suggested_tools,
+                    router_ord,
+                )
+            else:
+                router_ord = []
+                router_overrode = False
         except Exception as exc:
             logger.exception("Unexpected retriever error for %s", sub_q.id)
             return {
@@ -259,11 +369,17 @@ def _retriever_node_factory(
                 "n_hits": len(evidence_list),
                 "n_corpus": rstats.get("n_corpus", 0),
                 "n_web": rstats.get("n_web", 0),
+                "n_academic": rstats.get("n_academic", 0),
                 "retrieval_path": rstats.get("retrieval_path", "unknown"),
                 "n_pool": rstats.get("n_pool", 0),
                 "n_after_rerank": rstats.get("n_after_rerank", 0),
                 "status": status,
                 "top_urls": [str(ev.hit.url) for ev in evidence_list[:5]],
+                "router_intent": rstats.get("router_intent"),
+                "router_tools": rstats.get("router_tools"),
+                "planner_suggested_tools": ",".join(planner_suggested),
+                "router_ordered_tools": ",".join(router_ord),
+                "router_overrode_planner": router_overrode,
             },
         )
         return {
@@ -278,9 +394,15 @@ def _retriever_node_factory(
                         "n_hits": len(evidence_list),
                         "n_corpus": rstats.get("n_corpus", 0),
                         "n_web": rstats.get("n_web", 0),
+                        "n_academic": rstats.get("n_academic", 0),
                         "n_pool": rstats.get("n_pool", 0),
                         "n_after_rerank": rstats.get("n_after_rerank", 0),
-                        "retrieval_path": rstats.get("retrieval_path", ""),
+                        "retrieval_path": str(rstats.get("retrieval_path", "")),
+                        "router_intent": str(rstats.get("router_intent") or ""),
+                        "router_tools": str(rstats.get("router_tools") or ""),
+                        "planner_suggested_tools": ",".join(planner_suggested),
+                        "router_ordered_tools": ",".join(router_ord),
+                        "router_overrode_planner": router_overrode,
                     },
                 ),
             ],
@@ -327,6 +449,7 @@ def build_graph(
     *,
     search_fn: SearchFn | None = None,
     vector_search_fn: VectorSearchFn | None = None,
+    academic_search_fn: AcademicSearchFn | None = None,
     rerank_fn: RerankFn | None = None,
     retrieval_candidate_pool: int | None = None,
 ) -> Any:
@@ -344,6 +467,11 @@ def build_graph(
     vector_search_fn:
         Hybrid corpus search, typically :func:`vector_search`. In tests, pass
         a stub (often returning ``[]``) to avoid loading embeddings/Chroma.
+    academic_search_fn:
+        Optional :func:`~research_assistant.tools.academic_search.academic_search`
+        injected for tests. When ``tool_router_enabled`` and the plan includes
+        academic search, production uses the default import when this is
+        ``None``.
     rerank_fn:
         Maps ``(sub_question, merged_hits)`` to a shorter list. Defaults to
         :func:`rerank_search_hits` when ``Settings.reranker_enabled``; tests
@@ -356,12 +484,15 @@ def build_graph(
     fn: SearchFn = search_fn if search_fn is not None else web_search_with_fallback
     vfn: VectorSearchFn = vector_search_fn if vector_search_fn is not None else vector_search
     rfn: RerankFn = rerank_fn if rerank_fn is not None else _default_rerank_fn()
+    afn: AcademicSearchFn = (
+        academic_search_fn if academic_search_fn is not None else default_academic_search
+    )
     pool = (
         retrieval_candidate_pool
         if retrieval_candidate_pool is not None
         else settings.retrieval_candidate_pool
     )
-    retriever_node = _retriever_node_factory(fn, vfn, rfn, candidate_pool=pool)
+    retriever_node = _retriever_node_factory(fn, vfn, afn, rfn, candidate_pool=pool)
 
     builder = StateGraph(ResearchState)
     builder.add_node("planner", planner_node)
@@ -401,6 +532,7 @@ def run_research(
     per_query_cap_usd: float | None = None,
     search_fn: SearchFn | None = None,
     vector_search_fn: VectorSearchFn | None = None,
+    academic_search_fn: AcademicSearchFn | None = None,
     rerank_fn: RerankFn | None = None,
     retrieval_candidate_pool: int | None = None,
     critic_enabled_override: bool | None = None,
@@ -443,6 +575,7 @@ def run_research(
     graph = build_graph(
         search_fn=search_fn,
         vector_search_fn=vector_search_fn,
+        academic_search_fn=academic_search_fn,
         rerank_fn=rerank_fn,
         retrieval_candidate_pool=retrieval_candidate_pool,
     )

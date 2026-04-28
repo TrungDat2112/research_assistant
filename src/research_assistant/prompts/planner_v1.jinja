@@ -14,8 +14,21 @@ Per-field guidance:
   {% if output_language == "vi" %}Vietnamese{% else %}English{% endif %}.
   Keep proper nouns and technical terms in their original form.
 - `rationale`: one short sentence explaining why this sub-question matters.
-- `suggested_tools`: must be a non-empty list. For Week 1, only
-  "web_search" is available, so always include it.
+- `suggested_tools`: list **1 to 3** tool ids chosen from exactly these strings
+  (repeat names only if you truly need emphasis — prefer distinct tools):
+  * `vector_search` — use when the answer should come primarily from the **indexed
+    seed corpus** (definitions already in our vector store, canonical papers we ingested).
+  * `web_search` — use for **fresh** news, blog posts, documentation, or anything
+    unlikely to be only in the static corpus.
+  * `academic_search` — use for **arXiv-style** papers, benchmarks, formal methods,
+    survey comparisons, citation-heavy topics.
+  Order the list by **priority** for *your* intent (first = most important). Examples:
+  purely academic benchmark → `["academic_search", "vector_search"]`;
+  product news or 2026 events → start with `web_search`;
+  compare two methods using only our ingested papers → `["vector_search", "academic_search"]`.
+  **Runtime note:** the system still runs a **deterministic rule-based router** (by
+  sub-question wording). If its tool order differs from yours, **the router wins** —
+  your list is advisory for logging and future tuning.
 - `dependency_ids`: list of ids for prior sub-questions that must be
   answered first; use [] for independent ones. Valid id pattern is
   `sq_1`, `sq_2`, ... in order.

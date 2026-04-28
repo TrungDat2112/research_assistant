@@ -13,6 +13,7 @@ Grounded in:
   * ADR-018 — default dense embedding ``BAAI/bge-m3`` (override with
     ``EMBEDDING_MODEL`` for English-only fast iteration).
   * ADR-026 — optional HyDE (hypothetical document embedding) for weak hybrid probe.
+ * ADR-027 — rule-based tool router (intent → ordered retrieval tools).
 """
 
 from __future__ import annotations
@@ -150,6 +151,17 @@ class Settings(BaseSettings):
         ge=1,
         le=20,
         description="Hits passed to the Synthesizer after re-ranking.",
+    )
+    tool_router_enabled: bool = Field(
+        default=True,
+        description="When True, retriever uses heuristic intent → tool order "
+        "(vector / web / academic) before merge (ADR-027).",
+    )
+    tool_router_max_tools: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Max distinct tools to run per sub-question when routing is enabled.",
     )
 
     # ---- HyDE — optional dense query rewrite (PLAN §5.2) -----------------

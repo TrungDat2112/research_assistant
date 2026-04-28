@@ -68,10 +68,11 @@ d:\research-assistant\
 │   │   ├── web_search.py         # Tavily wrapper + fallback ladder; @observe tool span
 │   │   ├── academic_search.py    # arXiv metadata → SearchHit; @observe
 │   │   ├── fetch_pdf.py          # arXiv id / .pdf URL → Document; httpx + cache + pymupdf
+│   │   ├── router.py             # rule-based intent → ToolPlan; ADR-027
 │   │   └── vector_search.py     # hybrid BM25 + dense → SearchHit; @observe
 │   ├── graph/
 │   │   ├── state.py              # ResearchState TypedDict + trace_id/url + 5 Pydantic models
-│   │   └── research_graph.py     # pool → cross-encoder rerank → evidence; run_research root span
+│   │   └── research_graph.py     # retriever: router or corpus+web → CE rerank → evidence; run_research
 │   ├── prompts/
 │   │   ├── loader.py             # Jinja2 Environment + render helper (StrictUndefined)
 │   │   ├── planner_v1.jinja
@@ -103,7 +104,8 @@ d:\research-assistant\
 │       ├── test_prompts.py
 │       ├── test_web_search.py
 │       ├── test_agents.py
-│       ├── test_graph.py
+│       ├── test_graph.py             # LangGraph e2e mock; corpus/web + router unit
+│       ├── test_router.py            # rule-based intent ToolPlan (ADR-027)
 │       ├── test_observability.py
 │       ├── test_rag_schemas.py       # 6 cases
 │       ├── test_rag_chunking.py      # 8 cases (mocked tokenizer)
@@ -228,9 +230,9 @@ d:\research-assistant\
 
 #### B. Routing & Planner (mục 4)
 
-4. [ ] **Tool router rule-based** (`src/research_assistant/tools/router.py`): heuristic intent (`factual` / `academic` / `comparative` / `internal_corpus`) → `ToolPlan(primary, optional)`; tích hợp graph `_route_then_collect` thay `_corpus_then_web_hits`. Settings `tool_router_enabled=True`, `tool_router_max_tools=3`. ADR-027.
+4. [x] **Tool router rule-based** (`tools/router.py`, `graph/research_graph.py::_route_then_collect`): `classify_intent` + `plan_for_sub_question` → `ToolPlan(primary` + `optional`); merge theo thứ tự tool tới `retrieval_candidate_pool`; `Settings.tool_router_enabled` (mặc định **true**), `tool_router_max_tools=3`; tắt router → `_corpus_then_web_hits`. **`build_graph` / `run_research`**: `academic_search_fn` inject. Trace: `router_intent`, `router_tools`, `n_academic`. **`DECISIONS.md` ADR-027**; **`.env.example`** `TOOL_ROUTER_*`. Test `test_router.py` + `test_graph` (router off cho e2e legacy). Full suite **160** pass.
 
-5. [ ] **Planner `suggested_tools`**: schema đã có (`SubQuestion.suggested_tools`); cập nhật prompt planner để gợi ý; **router thắng** khi xung đột (deterministic).
+5. [x] **Planner `suggested_tools`**: `planner_v1.jinja` + `_PlanItemDraft` (1–3 tool: `vector_search` / `web_search` / `academic_search`); `sanitize_planner_suggested_tools`; retriever ghi `planner_suggested_tools`, `router_ordered_tools`, `router_overrode_planner` — chạy retrieval luôn theo rule router khi lệch. `SubQuestion` docstring cập nhật.
 
 #### C. Synthesis quality (mục 6–8)
 
@@ -246,7 +248,7 @@ d:\research-assistant\
 
 10. [ ] **Smoke A/B mới**: `week1_smoke.py --with-router --with-compare-sources`; JSON ghi `router_plan_per_subq`, `n_conflicts`.
 
-11. [ ] **ADR**: ADR-027 (router), ADR-028 (compare_sources), ADR-029 (factuality eval); `.env.example` thêm `TOOL_ROUTER_ENABLED`, `COMPARE_SOURCES_MODE`.
+11. [ ] **ADR**: ADR-028 (compare_sources), ADR-029 (factuality eval); `.env.example` thêm `COMPARE_SOURCES_MODE`.
 
 12. [ ] **Docs**: cập nhật `PLAN.md §10 Tuần 4`, `PROGRESS.md` (log + checklist tick).
 
@@ -473,6 +475,16 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`eval/retrieval.py`**: `iter_source_ids_reranked`, `run_rerank_retrieval_eval`.
 - **`scripts/run_retrieval_eval.py`**: `--with-rerank`, `--candidate-pool`, in A/B + `ab_delta`.
 - **Next**: mục 4 (citation coverage batch).
+
+### 2026-04-28 — Session 29 (Planner suggested_tools advisory)
+- **Prompt** `planner_v1.jinja` + **`_PlanItemDraft.suggested_tools`**: gợi ý công cụ; **`sanitize_planner_suggested_tools`**; retrieval log conflict vs router.
+- **Next**: Tuần 4 C — `compare_sources` / Critic nếu theo roadmap.
+
+### 2026-04-28 — Session 28 (Tuần 4 B1 tool router / ADR-027)
+- **`tools/router.py`**: `classify_intent`, `build_tool_plan`, `plan_for_sub_question`, `ToolPlan` (primary + optional list).
+- **`graph/research_graph.py`**: `_route_then_collect`; `tool_router_enabled` / `tool_router_max_tools` từ Settings; `build_graph` + `run_research` nhận `academic_search_fn`; trace `n_academic`, `router_intent`, `router_tools`. Graph tests: `TOOL_ROUTER_ENABLED=false` cho e2e legacy.
+- **`config.py`**, **`.env.example`**, **`DECISIONS.md` ADR-027**.
+- **Tests**: `tests/unit/test_router.py`, extension `test_graph.py`; **pytest 160** pass.
 
 ### 2026-04-27 — Session 27 (Tuần 4 A3 web_search trust tiers)
 - **`SearchHit.web_trust_tier`**: optional `high`/`medium`/`low`; `web_search` gán theo domain heuristic + `web_trust_tier_for_url()`; span output thêm `web_trust_tier_counts`.

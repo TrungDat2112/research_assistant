@@ -32,6 +32,7 @@ from research_assistant.observability import (
     update_span,
 )
 from research_assistant.prompts.loader import render
+from research_assistant.tools.router import sanitize_planner_suggested_tools
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +54,12 @@ class _PlanItemDraft(BaseModel):
         description="One-sentence reason this sub-question is needed.",
     )
     suggested_tools: list[str] = Field(
-        default_factory=lambda: ["web_search"],
-        description="Tools the retriever should use. For Week 1 only 'web_search' is wired.",
+        default_factory=list,
+        description=(
+            "1-3 advisory tool ids: vector_search, web_search, academic_search. "
+            "Invalid names are dropped at validation. Execution order always "
+            "follows the rule-based router when it disagrees (ADR-027)."
+        ),
     )
     dependency_ids: list[str] = Field(
         default_factory=list,
@@ -96,7 +101,7 @@ def _drafts_to_plan(drafts: list[_PlanItemDraft]) -> list[SubQuestion]:
                 id=new_id,
                 question=draft.question.strip(),
                 rationale=draft.rationale.strip(),
-                suggested_tools=draft.suggested_tools or ["web_search"],
+                suggested_tools=sanitize_planner_suggested_tools(draft.suggested_tools),
                 dependency_ids=list(draft.dependency_ids),
             )
         except ValidationError as exc:

@@ -34,15 +34,23 @@ _V = TypeVar("_V")
 class SubQuestion(BaseModel):
     """A single sub-question planned by the Planner agent.
 
-    ``suggested_tools`` is advisory — the Tool Router may override based on
-    availability / budget. ``dependency_ids`` lists prior sub-questions that
-    must be answered first (``[]`` means independent).
+    ``suggested_tools`` is advisory — the **rule-based tool router** (ADR-027)
+    chooses execution order from sub-question text; when they disagree, the
+    router order is used and the conflict is logged.
+    ``dependency_ids`` lists prior sub-questions that must be answered first
+    (``[]`` means independent).
     """
 
     id: str = Field(..., pattern=r"^sq_\d+$", description="Sub-question id, e.g. 'sq_1'.")
     question: str = Field(..., min_length=3)
     rationale: str = Field(default="", description="Why this sub-question matters.")
-    suggested_tools: list[str] = Field(default_factory=list)
+    suggested_tools: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Advisory tool ids (vector_search, web_search, academic_search). "
+            "Sanitized at plan build; rule-based router order wins at retrieval time."
+        ),
+    )
     dependency_ids: list[str] = Field(default_factory=list)
 
 
