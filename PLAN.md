@@ -327,7 +327,7 @@ Defense-in-depth 3 lớp:
 
 > Bám nguyên tắc **Start small, start smart**: tuần 1 single-tool + model mạnh; mở rộng dần.
 
-> **Snapshot 2026-04-25** (chi tiết execution: `PROGRESS.md`): **Tuần 1–3** đã đóng. Tuần 3 gồm: corpus seed **~20 doc / 1006 chunks** (bge-m3, Chroma dev), **eval 100** qrels EN+VI + rerank A/B (ADR-021/022), citation batch + language quality + HyDE (ADR-023/025/026), smoke flags + A/B (ADR-024), **dynamic `max_iterations`** (ADR-019), **prompt caching** (ADR-020). Vector store dev vẫn Chroma; Qdrant ở backlog prod. **Tiếp: Tuần 4** theo mục dưới.
+> **Snapshot 2026-04-29** (chi tiết execution: `PROGRESS.md`): **Tuần 1–4** checklist roadmap §10 đã tick. Tuần 4: `academic_search` / `fetch_pdf`, `web_search` **trust tiers**, rule-based **tool router** + Planner **`suggested_tools`** (ADR-027), **`compare_sources`** (ADR-028), Critic **bốn trục** + Reporter **Conflicts noted** (ADR-030/031), **factuality eval 20** + `run_factuality_eval.py` (ADR-029), `week1_smoke.py` **`--with-router` / `--with-compare-sources`** + JSON **`router_plan_per_subq`** / **`n_conflicts`**, `run_research` **router/compare overrides**. Tuần 3 trước đó: corpus **~20 doc / 1006 chunks** (bge-m3), eval **100** + rerank A/B, citation / language / HyDE, smoke A/B (ADR-019–026). **Tiếp: Tuần 5** (safety, budget, observability) theo mục dưới.
 
 ### Tuần 1 — Skeleton & tool cơ bản
 - [x] Setup repo (`uv init`, pre-commit, ruff, mypy, pytest).
@@ -355,11 +355,13 @@ Defense-in-depth 3 lớp:
 - **Exit criteria (mục tiêu Tuần 3)**: NDCG@10, citation coverage, cost/latency — đo bằng `run_retrieval_eval.py`, `run_citation_eval.py`, `week1_smoke.py`; bảng số thực tế trong `PROGRESS.md`.
 
 ### Tuần 4 — Critic loop + Multi-source
-- [ ] Critic agent + retry loop (max 2).
-- [ ] Thêm tool: `academic_search` (arXiv), `fetch_pdf`.
-- [ ] Tool router rule-based.
-- [ ] `compare_sources` tool.
-- **Exit criteria**: factuality ≥ 80% trên 20 query.
+- [x] Tools: `academic_search`, `fetch_pdf`; `web_search` trust tiers — Tuần 4 Part A / input router.
+- [x] Planner **`suggested_tools`** (advisory) + rule-based tool router — ADR-027.
+- [x] `compare_sources` trước Critic — ADR-028.
+- [x] Critic **bốn trục** + retry (ADR-017/030); Reporter References một dòng + `## Conflicts noted` — ADR-031.
+- [x] Factuality eval: `factuality_eval_20.json` + `run_factuality_eval.py` — ADR-029.
+- [x] Smoke metrics: `week1_smoke.py` `--with-router` / `--with-compare-sources`; JSON `router_plan_per_subq`, `n_conflicts`; `run_research` overrides.
+- **Exit criteria (đo khi chạy API)**: **mean_supported_ratio** ≥ **0.80** trên 20 query (`factuality.json`); router gold-plan / conflict flags / cost smoke — chi tiết `PROGRESS.md` Tuần 4. **Toolchain code**: `pytest`, `ruff`, `mypy strict` ✓.
 
 ### Tuần 5 — Safety, Observability, Cost
 - [ ] Guardrails input/output (PII, injection, domain whitelist).

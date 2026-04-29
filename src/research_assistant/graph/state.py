@@ -279,6 +279,10 @@ class ResearchState(TypedDict, total=False):
     max_iterations_reached: bool
     # If set, overrides :attr:`Settings.critic_enabled` for this run only (CLI).
     critic_enabled_override: bool | None
+    # If set, overrides :attr:`Settings.tool_router_enabled` for this run (smoke / CLI).
+    tool_router_enabled_override: bool | None
+    # If set, overrides :attr:`Settings.compare_sources_mode` for this run (smoke / CLI).
+    compare_sources_mode_override: Literal["off", "heuristic", "auto"] | None
 
     # Reporting ----------------------------------------------------------
     final_report: str | None
@@ -317,6 +321,8 @@ def new_state(
         current_sub_question_index=0,
         max_iterations_reached=False,
         critic_enabled_override=None,
+        tool_router_enabled_override=None,
+        compare_sources_mode_override=None,
         final_report=None,
         trace=[],
         total_cost_usd=0.0,

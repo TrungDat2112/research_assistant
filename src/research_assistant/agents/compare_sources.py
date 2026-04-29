@@ -8,7 +8,7 @@ from typing import Any
 from research_assistant.config import get_settings
 from research_assistant.graph.state import ResearchState, StepLog
 from research_assistant.observability import observe, update_span
-from research_assistant.tools.compare_sources import build_conflict_report
+from research_assistant.tools.compare_sources import CompareSourcesSetting, build_conflict_report
 
 
 @observe(name="compare_sources", as_type="span", capture_input=False, capture_output=False)
@@ -35,6 +35,14 @@ def compare_sources_node(state: ResearchState) -> dict[str, Any]:
     draft = state.get("drafts", {}).get(sub_q.id)
     evidence_list = list(state.get("evidence", {}).get(sub_q.id, []))
 
+    raw_mode = state.get("compare_sources_mode_override")
+    mode_override: CompareSourcesSetting | None = (
+        raw_mode if raw_mode in ("off", "heuristic", "auto") else None
+    )
+    effective_mode: CompareSourcesSetting = (
+        mode_override if mode_override is not None else settings.compare_sources_mode
+    )
+
     if draft is None:
         return {
             "trace": [
@@ -54,6 +62,7 @@ def compare_sources_node(state: ResearchState) -> dict[str, Any]:
         sub_q=sub_q,
         evidence=evidence_list,
         draft=draft,
+        mode=mode_override,
         cost_before=cost_before,
         per_query_cap_usd=cap,
     )
@@ -61,7 +70,7 @@ def compare_sources_node(state: ResearchState) -> dict[str, Any]:
     update_span(
         input={
             "sub_question_id": sub_q.id,
-            "mode": settings.compare_sources_mode,
+            "mode": effective_mode,
             "n_evidence": len(evidence_list),
         },
         output={

@@ -1,0 +1,222 @@
+{
+  "version": 1,
+  "description": "20 factuality queries (15 EN + 5 VI) for Tuần 4; 3–5 atomic gold claims each. Judge: supported / contradicted / unsupported vs final report. Topics align with configs/seed_corpus.yaml + ingested blogs (ADR-029).",
+  "counts": { "items": 20, "en": 15, "vi": 5 },
+  "items": [
+    {
+      "id": "f01",
+      "language": "en",
+      "query": "What is retrieval-augmented generation (RAG) and why is it used for knowledge-intensive NLP tasks?",
+      "gold_claims": [
+        "RAG retrieves external documents or passages at query time to condition the language model.",
+        "RAG aims to ground generation in non-parametric knowledge rather than relying only on weights stored in the model.",
+        "RAG is especially relevant when tasks require factual knowledge that may be missing or stale in the base model.",
+        "The standard RAG setup typically couples a retriever with a text generator for open-domain QA-style tasks."
+      ]
+    },
+    {
+      "id": "f02",
+      "language": "en",
+      "query": "How does Self-RAG improve over naive always-retrieve pipelines?",
+      "gold_claims": [
+        "Self-RAG can learn when to retrieve versus generate without retrieval.",
+        "Self-RAG includes self-critique mechanisms that judge whether retrieval and generations are helpful.",
+        "Self-RAG belongs to the broader family of retrieval-augmented large language model methods.",
+        "Self-RAG uses reflection-style signals during generation rather than a single fixed retrieve-then-read policy."
+      ]
+    },
+    {
+      "id": "f03",
+      "language": "en",
+      "query": "What does a typical RAG survey taxonomy cover for large language systems?",
+      "gold_claims": [
+        "RAG surveys usually organize stages such as retrieval, knowledge integration, and generation.",
+        "Modern RAG systems often discuss trade-offs between sparse retrieval, dense retrieval, and hybrid designs.",
+        "Survey papers frame RAG as a modular stack rather than a monolithic model."
+      ]
+    },
+    {
+      "id": "f04",
+      "language": "en",
+      "query": "What is LoRA and how does it change the cost of fine-tuning large language models?",
+      "gold_claims": [
+        "LoRA adds trainable low-rank matrices to selected weight matrices while keeping most pretrained weights frozen.",
+        "LoRA reduces the number of trainable parameters compared with full fine-tuning of all weights.",
+        "LoRA updates are structured as low-rank adaptation layers rather than dense full-rank updates everywhere.",
+        "LoRA is widely used as a parameter-efficient fine-tuning technique for transformers.",
+        "LoRA targets adaptation of attention or feed-forward linear maps with a small rank budget."
+      ]
+    },
+    {
+      "id": "f05",
+      "language": "en",
+      "query": "What is QLoRA and why does it matter for fine-tuning very large models?",
+      "gold_claims": [
+        "QLoRA fine-tunes a language model with a 4-bit quantized base model in typical configurations.",
+        "QLoRA keeps memory footprint lower than full-precision fine-tuning of the same architecture size.",
+        "QLoRA stacks low-rank adapters on top of the quantized backbone during training.",
+        "QLoRA is positioned as an efficient finetuning recipe for quantized LLMs."
+      ]
+    },
+    {
+      "id": "f06",
+      "language": "en",
+      "query": "Explain the ReAct pattern for LLM agents and how it differs from reasoning alone.",
+      "gold_claims": [
+        "ReAct interleaves reasoning traces with actions that can use external tools or an environment.",
+        "ReAct is designed so the model can observe feedback after actions before continuing reasoning.",
+        "ReAct differs from pure chain-of-thought that never commits to concrete environment actions.",
+        "The ReAct paradigm is used to build agents that plan and act in multiple steps."
+      ]
+    },
+    {
+      "id": "f07",
+      "language": "en",
+      "query": "What is Self-Refine for language models?",
+      "gold_claims": [
+        "Self-Refine is an iterative refinement approach where the model critiques and revises its own outputs.",
+        "Self-Refine relies on multi-pass generation rather than a single-shot answer only.",
+        "Self-Refine frames improvement as a feedback loop from the model to itself."
+      ]
+    },
+    {
+      "id": "f08",
+      "language": "en",
+      "query": "What is notable about Llama 2 as an open foundation model release?",
+      "gold_claims": [
+        "Llama 2 was released with open weights for research and commercial use under a custom license.",
+        "The Llama 2 technical report describes both base and chat-tuned model families.",
+        "Llama 2 belongs to the Llama family of large autoregressive transformer language models.",
+        "Llama 2 was positioned as an openly available alternative to closed proprietary chat models at launch."
+      ]
+    },
+    {
+      "id": "f09",
+      "language": "en",
+      "query": "What distinguishes DeepSeek-R1 style training for reasoning models?",
+      "gold_claims": [
+        "DeepSeek-R1 emphasizes strengthening reasoning capability in large language models.",
+        "DeepSeek-R1 training leverages reinforcement-learning-style incentives for reasoning behavior.",
+        "DeepSeek-R1 is part of the DeepSeek model line focused on advanced reasoning.",
+        "DeepSeek-R1 aims to produce chain-like reasoning outputs competitive with frontier reasoning systems."
+      ]
+    },
+    {
+      "id": "f10",
+      "language": "en",
+      "query": "What is Graph RAG in the Microsoft GraphRAG line of work for summarization?",
+      "gold_claims": [
+        "Graph RAG builds a graph-structured index over source content to support retrieval and summarization.",
+        "The Graph RAG approach targets query-focused summarization with global and local views of a corpus.",
+        "Graph RAG connects text units via a knowledge graph rather than only flat chunk retrieval.",
+        "Graph RAG is designed to improve coverage on holistic questions about large document collections."
+      ]
+    },
+    {
+      "id": "f11",
+      "language": "en",
+      "query": "What is Constitutional AI and how does it use AI feedback?",
+      "gold_claims": [
+        "Constitutional AI trains models toward harmlessness with synthetic AI feedback.",
+        "Constitutional AI uses a written constitution of principles to steer critique and revision.",
+        "Constitutional AI reduces reliance solely on human labels for every harmful example.",
+        "Constitutional AI is an alignment technique associated with Anthropic’s research."
+      ]
+    },
+    {
+      "id": "f12",
+      "language": "en",
+      "query": "How does Anthropic contextual retrieval change chunk embeddings?",
+      "gold_claims": [
+        "Contextual retrieval prepends chunk-specific explanatory context before embedding the chunk.",
+        "The goal is to reduce ambiguity when isolated chunks lack surrounding document context.",
+        "Anthropic positions contextual retrieval as improving vector search for RAG pipelines."
+      ]
+    },
+    {
+      "id": "f13",
+      "language": "en",
+      "query": "What do OpenAI structured outputs guarantee for API developers?",
+      "gold_claims": [
+        "Structured outputs are designed to match a developer-supplied JSON schema.",
+        "Structured outputs reduce malformed JSON compared with free-form completion alone.",
+        "Structured outputs help tool-calling and typed downstream parsing in agent systems."
+      ]
+    },
+    {
+      "id": "f14",
+      "language": "en",
+      "query": "What problem does LangGraph solve for LangChain agents?",
+      "gold_claims": [
+        "LangGraph models agent control flow as a cyclic graph over states.",
+        "LangGraph supports persistence and human-in-the-loop breakpoints in workflows.",
+        "LangGraph allows branching and loops that pure DAG chains struggle to express cleanly.",
+        "LangGraph is a framework layered on LangChain for building stateful agents."
+      ]
+    },
+    {
+      "id": "f15",
+      "language": "en",
+      "query": "What does the Hugging Face Ray RAG blog cover?",
+      "gold_claims": [
+        "The article discusses scaling retrieval-augmented generation pipelines with Ray.",
+        "It connects Hugging Face tooling with distributed Ray compute for RAG workloads.",
+        "It targets practitioners building production-style RAG systems beyond a single machine."
+      ]
+    },
+    {
+      "id": "f16",
+      "language": "vi",
+      "query": "Retrieval-Augmented Generation (RAG) là gì và vì sao quan trọng với LLM?",
+      "gold_claims": [
+        "RAG truy xuất tài liệu bên ngoài tại thời điểm truy vấn để bổ sung ngữ cảnh cho mô hình.",
+        "RAG giúp giảm ảo giác factual bằng cách neo câu trả lời vào nguồn được truy xuất.",
+        "RAG thường kết hợp bước retrieval với bước sinh văn bản của LLM.",
+        "RAG phù hợp khi kiến thức cần cập nhật hoặc không nằm hết trong trọng số mô hình."
+      ]
+    },
+    {
+      "id": "f17",
+      "language": "vi",
+      "query": "So sánh ngắn gọn LoRA và QLoRA cho fine-tuning LLM.",
+      "gold_claims": [
+        "LoRA huấn luyện ma trận hạng thấp gắn vào một số tầng trong khi đóng băng phần lớn trọng số gốc.",
+        "QLoRA kết hợp nền tảng được lượng tử hóa 4-bit với bộ adapter hiệu chỉnh hiệu quả tham số.",
+        "QLoRA thường tiết kiệm bộ nhớ hơn so với fine-tuning đầy đủ độ chính xác trên cùng quy mô.",
+        "Cả LoRA và QLoRA đều thuộc nhóm phương pháp fine-tuning hiệu quả tham số."
+      ]
+    },
+    {
+      "id": "f18",
+      "language": "vi",
+      "query": "Mô hình ReAct áp dụng cho tác nhân LLM như thế nào?",
+      "gold_claims": [
+        "ReAct xen kẽ suy luận bằng ngôn ngữ với hành động gọi công cụ hoặc tương tác môi trường.",
+        "ReAct cho phép quan sát phản hồi sau mỗi hành động trước khi tiếp tục.",
+        "ReAct khác với chuỗi suy luận thuần túy không thực hiện hành động bên ngoài.",
+        "ReAct nhắm tới tác nhân đa bước cần lập kế hoạch và hành động."
+      ]
+    },
+    {
+      "id": "f19",
+      "language": "vi",
+      "query": "LangGraph khác gì so với pipeline LangChain tuyến tính cho agent?",
+      "gold_claims": [
+        "LangGraph biểu diễn luồng điều khiển dạng đồ thị có thể có vòng lặp.",
+        "LangGraph hỗ trợ trạng thái tường minh giữa các bước của agent.",
+        "LangGraph phục vụ các workflow agent có nhánh và lặp phức tạp hơn DAG đơn giản."
+      ]
+    },
+    {
+      "id": "f20",
+      "language": "vi",
+      "query": "Constitutional AI là gì trong bài báo Constitutional AI của Anthropic?",
+      "gold_claims": [
+        "Constitutional AI dùng nguyên tắc dạng hiến pháp để định hướng phản hồi và chỉnh sửa mô hình.",
+        "Constitutional AI khai thác phản hồi từ AI để giảm nhu cầu gán nhãn con người cho mọi ví dụ.",
+        "Constitutional AI nhắm tới mô hình ít gây hại hơn nhờ quy trình alignment có giám sát bằng nguyên tắc.",
+        "Constitutional AI liên quan tới kỹ thuật alignment nhằm cải thiện độ vô hại của LLM."
+      ]
+    }
+  ]
+}

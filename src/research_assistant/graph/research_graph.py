@@ -301,8 +301,10 @@ def _retriever_node_factory(
 
         sub_q = plan[idx]
         settings = get_settings()
+        router_flag = state.get("tool_router_enabled_override")
+        use_router = settings.tool_router_enabled if router_flag is None else bool(router_flag)
         try:
-            if settings.tool_router_enabled:
+            if use_router:
                 merged, rstats = _route_then_collect(
                     sub_q.question,
                     sub_q.rationale or "",
@@ -336,7 +338,7 @@ def _retriever_node_factory(
             else:
                 rstats = {**rstats, "n_pool": n_pool, "n_after_rerank": len(hits)}
             planner_suggested = sanitize_planner_suggested_tools(sub_q.suggested_tools)
-            if settings.tool_router_enabled:
+            if use_router:
                 router_ord = [str(x) for x in rstats.get("router_ordered_tools", [])]
                 router_overrode = retrieval_tool_plan_differs_from_planner(
                     sub_q.suggested_tools,
@@ -543,6 +545,8 @@ def run_research(
     rerank_fn: RerankFn | None = None,
     retrieval_candidate_pool: int | None = None,
     critic_enabled_override: bool | None = None,
+    tool_router_enabled_override: bool | None = None,
+    compare_sources_mode_override: Literal["off", "heuristic", "auto"] | None = None,
     flush_langfuse: bool = True,
 ) -> ResearchState:
     """High-level entry point used by CLI / Streamlit / smoke scripts.
@@ -554,8 +558,10 @@ def run_research(
 
     Parameters mirror :func:`graph.state.new_state` plus injectable
     ``search_fn`` / ``vector_search_fn`` / ``rerank_fn`` for tests,
-    optional ``critic_enabled_override`` (``False`` = skip Critic LLM for this
-    run). Returns the final :class:`ResearchState`.
+    optional     ``critic_enabled_override`` (``False`` = skip Critic LLM for this
+    run). Optional ``tool_router_enabled_override`` / ``compare_sources_mode_override``
+    force retrieval routing and cross-source scan for a single run (smoke / tests).
+    Returns the final :class:`ResearchState`.
     """
     settings = get_settings()
     initial = new_state(
@@ -568,6 +574,10 @@ def run_research(
     )
     if critic_enabled_override is not None:
         initial["critic_enabled_override"] = critic_enabled_override
+    if tool_router_enabled_override is not None:
+        initial["tool_router_enabled_override"] = tool_router_enabled_override
+    if compare_sources_mode_override is not None:
+        initial["compare_sources_mode_override"] = compare_sources_mode_override
 
     # Capture Langfuse trace identifiers from THIS agent span (we are
     # inside ``@observe(as_type="agent")``). Doing it here rather than

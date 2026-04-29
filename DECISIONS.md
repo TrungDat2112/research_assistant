@@ -437,7 +437,20 @@
   - Chế độ ``Settings.compare_sources_mode``: ``off`` \| ``heuristic`` \| ``auto`` (mặc định **auto**). Trong ``auto``: luôn chạy heuristic; gọi **Sonnet structured** (cùng model Planner) khi heuristic có bất kỳ conflict nào **hoặc** ``classify_intent`` = ``comparative`` (ADR-027). Khi LLM trả về rỗng, giữ bản heuristic (conservative).
   - LangGraph: node ``compare_sources`` ngay sau ``synthesizer``, trước ``critic``; state ``conflict_reports: dict[sub_q_id, ConflictReport]``.
   - ``Critique`` thêm ``conflicts: list[ConflictItem]`` (sao chép từ report); prompt Critic (``critic_user_rest_v1``) có khối conflicts để trục consistency.
-- **Hệ quả**: Thêm ~1 span/sub-q; ``auto`` có thể thêm 1 structured call/sub-q khi comparative hoặc có numeric mismatch — đo cost trong smoke Tuần 4.
+  - **Hệ quả**: Thêm ~1 span/sub-q; ``auto`` có thể thêm 1 structured call/sub-q khi comparative hoặc có numeric mismatch — đo cost trong smoke Tuần 4.
+
+## ADR-029: Factuality eval 20 query — atomic gold claims + Sonnet judge
+
+- **Ngày**: 2026-04-29
+- **Trạng thái**: Accepted
+- **Context**: PROGRESS Tuần 4 exit criteria cần **factuality ≥ 0.80** trên bộ cố định; cần bộ dữ liệu reproducible (không chỉ rubric ngôn ngữ ADR-025) và nhãn từng claim để debug hallucination / bỏ sót.
+- **Quyết định**:
+  - **`data/eval/factuality_eval_20.json`**: 20 mục (**15 EN + 5 VI**); mỗi mục **3–5** **atomic gold claims** (một fact/định nghĩa kiểm được); `id` `f01`…`f20`, chủ đề bám seed corpus + blog đã ingest.
+  - **Module** ``eval/factuality.py``: load/validate eval set; ``judge_factuality`` gọi **Claude Sonnet 4.5** structured output (cùng model Planner, ADR-008); mỗi claim nhận một trong **supported** | **contradicted** | **unsupported** so với **final report** Markdown (kể cả mạch `[^N]`).
+  - **Chuẩn hoá output**: nếu judge thiếu index → coi **unsupported** (`missing_judgment`); metric chính **mean_supported_ratio** = macro mean (theo query ok) của *(# supported / # claims)*.
+  - **CLI** ``scripts/run_factuality_eval.py``: mặc định ``run_research`` + judge; ``--reports-json`` chỉ chấm; ``--target-mean-supported`` + ``--strict-exit`` cho gate; tương thích ``--no-rerank`` / ``--no-critic``.
+- **Lý do**: Faithfulness cần đối chiếu claim-level; nhãn 3 lớp phân biệt im lặng vs mâu thuẫn; không chạy eval đắt trong CI — giữ unit test mock LLM.
+- **Hệ quả**: Chi phí ~20 lần research + ~20 judge nếu chạy full offline; báo cáo tiếng Việt vẫn được judge (prompt system tiếng Anh, rubric rõ).
 
 ## ADR-030: Critic bốn trục — faithfulness / completeness / citation / consistency
 

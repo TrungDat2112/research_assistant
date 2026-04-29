@@ -7,9 +7,11 @@
 
 ## Trạng thái hiện tại
 
-**Phase**: `Tuần 4 khởi động — multi-source tools (academic_search / fetch_pdf), tool router rule-based, compare_sources, factuality eval 20 query (PLAN.md §10 Tuần 4).`
-**Last updated**: 2026-04-27
+**Phase**: `Tuần 4 roadmap §10 đóng (harness + ADR-027…031 + ADR-029); đo exit criteria factuality/cost offline khi cần. Tiếp theo: Tuần 5 — safety / budget / observability (PLAN.md §10).`
+**Last updated**: 2026-04-29
 **Last session summary**:
+- **Docs Tuần 4**: `PLAN.md` §10 snapshot 2026-04-29 + checklist Tuần 4; `PROGRESS.md` tick mục 12, Phase → Tuần 5.
+- **Factuality eval (ADR-029)**: `data/eval/factuality_eval_20.json` (15 EN + 5 VI, 3–5 gold claims/query); `eval/factuality.py` + `scripts/run_factuality_eval.py` + judge prompts; metric **mean_supported_ratio**; tests `test_factuality.py`.
 - **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
 - **Rerank eval**: `run_retrieval_eval.py --with-rerank` — so sánh stage-1 vs pool+`bge-reranker-v2-m3`; thêm MRR, precision@5; `ab_delta` trong JSON output.
 - **Full 5-query smoke re-run** (`scripts/week1_smoke.py`): tổng **$0.7565** · **2429.5s** wallclock · 5/5 ok. So với baseline Tuần 1 trong repo (**$0.1282** · **178.8s**): chênh chủ yếu do **Critic** (thêm structured Sonnet/sub-q) + **hybrid corpus + web + cross-encoder rerank** (CPU ~30–80s/retrieval batch lần đầu) + plan dài hơn (5–7 sub-q thay vì 1–7). Mỗi query có `langfuse_trace_id` / `langfuse_trace_url` trong `week1_metrics.json`. Script ghi thêm **retrieval**: `evidence_hits_by_source` (corpus vs web) + `retriever_details` (`n_corpus`/`n_web`/`retrieval_path`/`n_pool`/`n_after_rerank` per sub-q). **Cảnh báo**: 3/5 lần chạy log `Max iterations reached (8)` (query RAG so với fine-tuning, o3 vs R1, vector DB) — cần tune `max_iterations` hoặc Critic/retry nếu muốn hoàn tất mọi sub-q trước report.
@@ -96,7 +98,7 @@ d:\research-assistant\
 │   │       ├── html_source.py    # trafilatura
 │   │       └── loader.py         # SeedConfig.from_yaml + load_seed_corpus
 │   ├── safety/__init__.py        # placeholder — Tuần 5
-│   └── eval/                     # metrics, retrieval eval, smoke citation, language_quality
+│   └── eval/                     # metrics, retrieval, smoke citation, language_quality, factuality
 ├── tests/
 │   ├── conftest.py
 │   └── unit/
@@ -116,14 +118,16 @@ d:\research-assistant\
 │       ├── test_hybrid_retrieval.py  # BM25 + hybrid fusion
 │       ├── test_vector_search.py     # SearchHit corpus tool
 │       ├── test_retrieval_metrics.py # DCG/NDCG/recall
-│       └── test_retrieval_load.py    # JSON eval set
+│       ├── test_retrieval_load.py    # JSON eval set
+│       └── test_factuality.py        # factuality eval (mock judge)
 ├── ui/app.py
 ├── scripts/
-│   ├── week1_smoke.py
+│   ├── week1_smoke.py            # 5-query smoke; --ab; --with-router / --with-compare-sources
 │   ├── ingest_seed_corpus.py     # fetch → chunk → embed → upsert + manifest
 │   ├── run_retrieval_eval.py     # Recall@10/20, NDCG@10 (default: retrieval_eval_100.json)
 │   ├── run_citation_eval.py      # smoke MD → citation_coverage.json (paragraph [^N] coverage)
 │   ├── run_language_quality_eval.py  # 5 VI + 5 EN → language_quality.json (LLM judge rubric)
+│   ├── run_factuality_eval.py    # 15 EN + 5 VI gold claims → factuality.json (Sonnet judge)
 │   └── expand_retrieval_eval.py  # build/validate retrieval_eval_100.json from manifest
 ├── data/
 │   ├── chroma/                   # (gitignored) Chroma PersistentClient store
@@ -135,7 +139,9 @@ d:\research-assistant\
 │       ├── retrieval_eval_30.json  # 30 qrels legacy (EN, single-gold)
 │       ├── retrieval_eval_100.json  # 100 qrels: 70 EN + 30 VI, multi-gold
 │       ├── citation_coverage.json  # smoke batch: mean paragraph citation coverage
-│       └── language_quality.json   # VI/EN judge rubric (run_language_quality_eval.py)
+│       ├── language_quality.json   # VI/EN judge rubric (run_language_quality_eval.py)
+│       ├── factuality_eval_20.json # 15 EN + 5 VI; 3–5 atomic gold claims per query
+│       └── factuality.json         # output: run_factuality_eval.py (optional / gitignored locally)
 ├── configs/
 │   └── seed_corpus.yaml          # arXiv + HTML blogs (see file; expand when eval grows)
 └── notebooks/                    # (empty)
@@ -209,7 +215,7 @@ d:\research-assistant\
 
 ---
 
-### Việc tiếp theo — Tuần 4 (12 mục — A/B/C/D)
+### Việc tiếp theo — Tuần 4 (12 mục — A/B/C/D) — **đóng 2026-04-29**
 
 **Context**: Tuần 3 đóng. Demo `data/eval/demo_run.md` lộ điểm yếu **nguồn web nhiễu** (job/course pages), **References dính dòng**, **mục 4 thiếu evidence so sánh** → Tuần 4 mở thêm nguồn học thuật + router quyết định tool + Critic 4 trục + factuality eval.
 
@@ -246,13 +252,13 @@ d:\research-assistant\
 
 #### D. Eval & docs (mục 9–12)
 
-9. [ ] **`factuality_eval_20.json`** (`data/eval/factuality_eval_20.json`): 15 EN + 5 VI, mỗi query có 3–5 atomic gold claims; `eval/factuality.py` + `scripts/run_factuality_eval.py` (Sonnet judge: supported / contradicted / unsupported). ADR-029.
+9. [x] **`factuality_eval_20.json`** (`data/eval/factuality_eval_20.json`): 15 EN + 5 VI, mỗi query có 3–5 atomic gold claims; `eval/factuality.py` + `scripts/run_factuality_eval.py` (Sonnet judge: supported / contradicted / unsupported). ADR-029. *(Session 2026-04-29)*
 
-10. [ ] **Smoke A/B mới**: `week1_smoke.py --with-router --with-compare-sources`; JSON ghi `router_plan_per_subq`, `n_conflicts`.
+10. [x] **Smoke A/B mới**: `week1_smoke.py --with-router --with-compare-sources`; JSON ghi `router_plan_per_subq`, `n_conflicts`. *(Session 2026-04-29: state overrides + mọi lần chạy smoke đều ghi hai field này trong từng query.)*
 
-11. [ ] **ADR**: ADR-029 (factuality eval). *(ADR-028 + `.env.example` `COMPARE_SOURCES_MODE` ✓ session 2026-04-28.)*
+11. [x] **ADR-029** (factuality eval): `DECISIONS.md` — bộ 20 query, judge Sonnet, `eval/factuality.py`, `run_factuality_eval.py`. *(Session 2026-04-29.)*
 
-12. [ ] **Docs**: cập nhật `PLAN.md §10 Tuần 4`, `PROGRESS.md` (log + checklist tick).
+12. [x] **Docs**: cập nhật `PLAN.md §10 Tuần 4`, `PROGRESS.md` (log + checklist tick). *(Session 2026-04-29 — snapshot + checklist Tuần 4, Phase, session 35.)*
 
 ---
 
@@ -300,6 +306,24 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 ---
 
 ## Log session
+
+### 2026-04-29 — Session 35 (Tuần 4 docs — PLAN §10 / checklist)
+- **`PLAN.md` §10**: snapshot **2026-04-29** (Tuần 1–4); mục **Tuần 4** mở rộng: tools + trust tiers, planner/router, compare_sources, critic/reporter, factuality, smoke metrics + overrides; exit criteria tách **đo API** vs **toolchain**.
+- **`PROGRESS.md`**: Phase chuyển sang post–Tuần 4; tick **mục 12** (docs); checklist Tuần 4 **12/12**.
+- **Next**: **Tuần 5** theo `PLAN.md` — guardrails, budget, Langfuse polish, v.v.
+
+### 2026-04-29 — Session 34 (week1_smoke router / conflicts JSON)
+- **`week1_smoke.py`**: `--with-router` (force tool router on), `--with-compare-sources` (force `compare_sources` = `auto`); `run_research(..., tool_router_enabled_override=..., compare_sources_mode_override=...)`.
+- **State** ADR-style fields: `tool_router_enabled_override`, `compare_sources_mode_override`; retriever / `compare_sources_node` đọc override.
+- **Metrics** mỗi query: `router_plan_per_subq` (router cuối cùng theo thứ tự plan), `n_conflicts` (tổng items trong `conflict_reports`); `run_flags` / `ab_compare` ghi cờ `with_*`.
+- **Next**: *(Tuần 4 docs — session 35.)*
+
+### 2026-04-29 — Session 33 (Tuần 4 — factuality eval / ADR-029)
+- **`data/eval/factuality_eval_20.json`**: 15 EN + 5 VI, 3–5 atomic `gold_claims`/`query`/`language`.
+- **`eval/factuality.py`**: load/validate; `judge_factuality` → Sonnet structured **supported** / **contradicted** / **unsupported**; `normalize_judgments` + **mean_supported_ratio** macro.
+- **Prompts** `factuality_judge_*_v1.jinja`; **`scripts/run_factuality_eval.py`** (`--eval-json`, `--reports-json`, `--target-mean-supported`, `--strict-exit`, `--no-rerank`/`--no-critic`).
+- **`tests/unit/test_factuality.py`**; **DECISIONS.md** ADR-029.
+- **Next**: *(đã làm mục 10 — session 34.)*
 
 ### 2026-04-21 — Session 1 (Planning)
 - Đọc `AI_building_principles.png`, tổng hợp 15+ nguyên tắc Stanford.

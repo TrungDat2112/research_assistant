@@ -10,10 +10,15 @@ Not a pytest test (it calls real external APIs and costs money). Run::
     # Single pass with CLI flags (same as ``research-assistant``)
     uv run python scripts/week1_smoke.py --no-rerank --no-critic --max-iterations 16
 
+    # Force tool-router + compare_sources (overrides env for this run); JSON adds
+    # ``router_plan_per_subq`` / ``n_conflicts`` per query
+    uv run python scripts/week1_smoke.py --with-router --with-compare-sources
+
 Outputs:
     * data/eval/week1_outputs.md   — concatenated Markdown reports.
     * data/eval/week1_metrics.json — per-query cost / timing / citations /
-      ``max_iterations_reached`` / Langfuse ids / retrieval stats; optional
+      ``max_iterations_reached`` / Langfuse ids / retrieval stats;
+      ``router_plan_per_subq`` / ``n_conflicts`` (Tuần 4 smoke); optional
       ``ab_compare`` when ``--ab``; optional ``delta_vs_previous_file``.
     * Prints a compact summary table to stdout at the end.
 """
@@ -97,6 +102,51 @@ def _aggregate_retrieval_stats(final: Any) -> dict[str, Any]:
     }
 
 
+def _router_plan_per_subq(final: Any) -> list[dict[str, Any]]:
+    """Last retriever-step router snapshot per sub-question, in plan order."""
+    plan = final.get("plan") or []
+    id_order = [sq.id for sq in plan]
+    last_by_sq: dict[str, dict[str, Any]] = {}
+    for step in final.get("trace") or []:
+        if _step_attr(step, "node") != "retriever":
+            continue
+        det = _step_attr(step, "details") or {}
+        if not isinstance(det, dict):
+            continue
+        sq = det.get("sub_question_id")
+        if not isinstance(sq, str):
+            continue
+        ord_raw = det.get("router_ordered_tools")
+        if isinstance(ord_raw, str):
+            ord_list = [x.strip() for x in ord_raw.split(",") if x.strip()]
+        elif isinstance(ord_raw, list):
+            ord_list = [str(x) for x in ord_raw]
+        else:
+            ord_list = []
+        last_by_sq[sq] = {
+            "sub_question_id": sq,
+            "router_intent": det.get("router_intent"),
+            "router_tools": det.get("router_tools"),
+            "router_ordered_tools": ord_list,
+            "router_overrode_planner": det.get("router_overrode_planner"),
+            "planner_suggested_tools": det.get("planner_suggested_tools"),
+        }
+    return [last_by_sq[i] for i in id_order if i in last_by_sq]
+
+
+def _n_conflicts(final: Any) -> int:
+    """Total conflict items across sub-questions (compare_sources)."""
+    reports = final.get("conflict_reports") or {}
+    n = 0
+    for rep in reports.values():
+        items = _step_attr(rep, "items")
+        if items is None and isinstance(rep, dict):
+            items = rep.get("items")
+        if isinstance(items, list):
+            n += len(items)
+    return n
+
+
 def _run_smoke_pass(
     *,
     label: str,
@@ -104,6 +154,8 @@ def _run_smoke_pass(
     no_critic: bool,
     max_iterations: int,
     per_query_cap_usd: float,
+    tool_router_enabled_override: bool | None,
+    compare_sources_mode_override: Literal["off", "heuristic", "auto"] | None,
 ) -> tuple[list[str], list[dict[str, Any]], float, float, int]:
     """Execute all seed queries; return report bodies, metrics rows, totals, hit-cap count."""
     all_reports: list[str] = []
@@ -134,6 +186,8 @@ def _run_smoke_pass(
                 per_query_cap_usd=per_query_cap_usd,
                 rerank_fn=rerank_fn,
                 critic_enabled_override=critic_override,
+                tool_router_enabled_override=tool_router_enabled_override,
+                compare_sources_mode_override=compare_sources_mode_override,
             )
         except Exception:
             logger.exception("Query %d failed; recording and continuing.", idx)
@@ -146,6 +200,8 @@ def _run_smoke_pass(
                     "cost_usd": 0.0,
                     "wallclock_s": round(time.perf_counter() - start, 2),
                     "max_iterations_reached": False,
+                    "router_plan_per_subq": [],
+                    "n_conflicts": 0,
                 },
             )
             all_reports.append(f"# Query {idx}: {query}\n\n_(Run failed — see logs)_\n")
@@ -181,6 +237,8 @@ def _run_smoke_pass(
                 "max_iterations_reached": mir,
                 "langfuse_trace_id": final.get("trace_id"),
                 "langfuse_trace_url": final.get("trace_url"),
+                "router_plan_per_subq": _router_plan_per_subq(final),
+                "n_conflicts": _n_conflicts(final),
                 **retrieval,
             },
         )
@@ -223,6 +281,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Iteration floor before planner (planner may raise per ADR-019).",
     )
+    p.add_argument(
+        "--with-router",
+        action="store_true",
+        help="Force rule-based tool router on for this run (overrides TOOL_ROUTER_ENABLED=false).",
+    )
+    p.add_argument(
+        "--with-compare-sources",
+        action="store_true",
+        help="Force compare_sources mode to auto (overrides COMPARE_SOURCES_MODE=off).",
+    )
     return p.parse_args(argv)
 
 
@@ -247,6 +315,11 @@ def main(argv: list[str] | None = None) -> int:
 
     max_iters = args.max_iterations if args.max_iterations is not None else settings.max_iterations
 
+    router_ov = True if args.with_router else None
+    compare_ov: Literal["off", "heuristic", "auto"] | None = (
+        "auto" if args.with_compare_sources else None
+    )
+
     previous_metrics: dict[str, Any] | None = None
     if _METRICS_FILE.is_file():
         try:
@@ -265,6 +338,8 @@ def main(argv: list[str] | None = None) -> int:
             no_critic=True,
             max_iterations=max_iters,
             per_query_cap_usd=settings.per_query_cap_usd,
+            tool_router_enabled_override=router_ov,
+            compare_sources_mode_override=compare_ov,
         )
         body_tuned, metrics_tuned, cost_t, wall_t, cap_t = _run_smoke_pass(
             label="tuned",
@@ -272,6 +347,8 @@ def main(argv: list[str] | None = None) -> int:
             no_critic=False,
             max_iterations=max_iters,
             per_query_cap_usd=settings.per_query_cap_usd,
+            tool_router_enabled_override=router_ov,
+            compare_sources_mode_override=compare_ov,
         )
 
         report_md = (
@@ -287,6 +364,10 @@ def main(argv: list[str] | None = None) -> int:
 
         payload: dict[str, Any] = {
             "mode": "ab_compare",
+            "run_flags": {
+                "with_router": bool(args.with_router),
+                "with_compare_sources": bool(args.with_compare_sources),
+            },
             "max_iterations_floor": max_iters,
             "total_cost_usd": round(cost_t, 6),
             "total_wallclock_s": round(wall_t, 2),
@@ -353,12 +434,15 @@ def main(argv: list[str] | None = None) -> int:
         no_critic=args.no_critic,
         max_iterations=max_iters,
         per_query_cap_usd=settings.per_query_cap_usd,
+        tool_router_enabled_override=router_ov,
+        compare_sources_mode_override=compare_ov,
     )
 
     _REPORT_FILE.write_text(
         "# Research Assistant — Week 1 Smoke Test Outputs\n\n"
         f"Generated from `scripts/week1_smoke.py` across {len(QUERIES)} queries.\n"
         f"Flags: no_rerank={args.no_rerank} no_critic={args.no_critic} "
+        f"with_router={args.with_router} with_compare_sources={args.with_compare_sources} "
         f"max_iterations_floor={max_iters}.\n"
         f"Total cost: ${total_cost:.4f} · Total wallclock: {total_wallclock:.1f}s\n"
         + "".join(body),
@@ -369,6 +453,8 @@ def main(argv: list[str] | None = None) -> int:
         "run_flags": {
             "no_rerank": args.no_rerank,
             "no_critic": args.no_critic,
+            "with_router": bool(args.with_router),
+            "with_compare_sources": bool(args.with_compare_sources),
             "max_iterations_floor": max_iters,
         },
         "total_cost_usd": round(total_cost, 6),
