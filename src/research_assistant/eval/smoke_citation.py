@@ -1,4 +1,4 @@
-"""Citation coverage over concatenated smoke Markdown reports (``week1_outputs.md``).
+"""Citation coverage over concatenated smoke Markdown reports (``smoke_outputs.md``).
 
 Uses the same paragraph + ``[^N]`` heuristic as :func:`paragraph_citation_stats`,
 with extra skips for reporter-only Markdown (numbered section headers, bare
@@ -92,10 +92,10 @@ class SmokeQueryCitation:
 
 
 def parse_smoke_markdown(md: str) -> list[SmokeQueryCitation]:
-    """Split ``week1_outputs.md``-style file and score each query report."""
+    """Split ``smoke_outputs.md``-style file and score each query report."""
     matches = list(_QUERY_HEADER_RE.finditer(md))
     if not matches:
-        msg = "no '# Query N (VI|EN):' headers found — expected week1_outputs.md"
+        msg = "no '# Query N (VI|EN):' headers found — expected smoke_outputs.md"
         raise ValueError(msg)
 
     out: list[SmokeQueryCitation] = []

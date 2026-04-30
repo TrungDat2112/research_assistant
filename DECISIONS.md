@@ -306,7 +306,7 @@
 - **Trạng thái**: Accepted
 - **Context**: Tuần 3 (PROGRESS) cần đo citation coverage trên output thật, tái sử dụng heuristic Critic (ADR-017) thay vì LLM judge mới.
 - **Quyết định**:
-  - **Nguồn**: `data/eval/week1_outputs.md` (concat từ `week1_smoke.py`), CLI `scripts/run_citation_eval.py` → `data/eval/citation_coverage.json`.
+  - **Nguồn**: `data/eval/smoke_outputs.md` (concat từ `smoke_eval.py`), CLI `scripts/run_citation_eval.py` → `data/eval/citation_coverage.json`.
   - **Metric**: cùng lõi ``paragraph_citation_stats`` (đoạn ≥24 ký tự, ≥1 marker ``[^N]``); đoạn disclaimer “insufficient” / “Chưa đủ dữ liệu” / “No synthesized answer” và tiêu đề Markdown (``## n.``, heading-only, một dòng **bold** tiêu đề) **bỏ qua** khỏi tử số/mẫu số.
   - **Báo cáo ghép nhiều mục**: tắt ``apply_full_body_insufficient_guard`` — không coi cả file là “insufficient” chỉ vì một đoạn chứa cụm disclaimer (tránh mean sai 100%).
   - **Target Tuần 3**: mean coverage ≥ **0.8** trên 5 query smoke (exit 1 tùy chọn ``--strict-exit``).
@@ -381,7 +381,7 @@
   - CLI ``research-assistant``: ``--no-rerank`` (``no_cross_encoder_rerank_fn``), ``--no-critic`` (``critic_enabled_override=False`` trong state), giữ ``--max-iterations`` làm sàn trước planner (ADR-019 vẫn nâng trần sau planner).
   - ``ResearchState.critic_enabled_override``: khi ``False``, Critic auto-pass; planner dùng ``1`` attempt/sub-q cho ``planned_max_iterations`` thay vì ``critic_max_attempts_per_sub_question``.
   - ``max_iterations_reached``: reporter set ``True`` khi ``iterations >= max_iterations`` và ``current_sub_question_index < len(plan)``.
-  - ``scripts/week1_smoke.py --ab``: chạy lần lượt profile base rồi tuned, JSON ``ab_compare.cost_delta_tuned_minus_base_usd`` (và wallclock).
+  - ``scripts/smoke_eval.py --ab``: chạy lần lượt profile base rồi tuned, JSON ``ab_compare.cost_delta_tuned_minus_base_usd`` (và wallclock).
 - **Hệ quả**: Đo delta cost không cần đổi ``.env``; metrics file có thêm ``mode`` / ``run_flags``.
 
 ---

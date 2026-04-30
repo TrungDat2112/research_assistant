@@ -1,4 +1,4 @@
-"""Streamlit UI for the Research Assistant Agent (Week 1 — tối giản).
+"""Streamlit UI for the Research Assistant Agent (minimal dev UI).
 
 Run with::
 
@@ -6,8 +6,7 @@ Run with::
 
 Exposes a single-page UI: user types a research question, clicks "Run",
 watches the trace stream in real time, and reads the rendered Markdown
-report. Not production-grade — meant for dev-loop visibility per
-PLAN.md §10 (Week 1 exit criteria).
+report. Not production-grade — meant for dev-loop visibility per PLAN.md.
 """
 
 from __future__ import annotations

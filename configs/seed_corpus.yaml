@@ -1,4 +1,4 @@
-# Seed corpus for Week 2–3 RAG ingestion (ADR-010, ADR-013, ADR-020).
+# Seed corpus for RAG ingestion (ADR-010, ADR-013, ADR-020).
 #
 # Size: ~30 docs for Tuần 3 eval set expansion (100 câu retrieval). Core 10 +
 # 15 additional covering retriever diversity (DPR, ColBERT/BGE ranking, fusion,

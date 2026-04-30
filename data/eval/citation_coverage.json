@@ -2,7 +2,7 @@
   "version": 1,
   "generated_at": "2026-04-24T12:33:48.002403Z",
   "metric": "paragraph_citation_coverage",
-  "smoke_markdown": "D:/research-assistant/data/eval/week1_outputs.md",
+  "smoke_markdown": "D:/research-assistant/data/eval/smoke_outputs.md",
   "n_queries": 5,
   "target_mean_coverage": 0.8,
   "mean_coverage": 0.967949,

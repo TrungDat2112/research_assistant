@@ -1,4 +1,4 @@
-"""Batch citation coverage from smoke Markdown (``week1_outputs.md``).
+"""Batch citation coverage from smoke Markdown (``smoke_outputs.md``).
 
 Computes mean paragraph-level ``[^N]`` coverage (same core heuristic as the
 Critic) over reporter output, with skips for section headings. Writes
@@ -24,7 +24,7 @@ from research_assistant.eval.smoke_citation import run_smoke_citation_eval
 logger = logging.getLogger(__name__)
 
 _REPO = Path(__file__).resolve().parents[1]
-_DEFAULT_SMOKE = _REPO / "data" / "eval" / "week1_outputs.md"
+_DEFAULT_SMOKE = _REPO / "data" / "eval" / "smoke_outputs.md"
 _DEFAULT_OUT = _REPO / "data" / "eval" / "citation_coverage.json"
 
 
@@ -36,7 +36,7 @@ def main() -> int:
         "--smoke-md",
         type=Path,
         default=_DEFAULT_SMOKE,
-        help="Concatenated smoke output Markdown (default: data/eval/week1_outputs.md).",
+        help="Concatenated smoke output Markdown (default: data/eval/smoke_outputs.md).",
     )
     p.add_argument(
         "--out",

@@ -14,7 +14,7 @@
 - **Factuality eval (ADR-029)**: `data/eval/factuality_eval_20.json` (15 EN + 5 VI, 3–5 gold claims/query); `eval/factuality.py` + `scripts/run_factuality_eval.py` + judge prompts; metric **mean_supported_ratio**; tests `test_factuality.py`.
 - **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
 - **Rerank eval**: `run_retrieval_eval.py --with-rerank` — so sánh stage-1 vs pool+`bge-reranker-v2-m3`; thêm MRR, precision@5; `ab_delta` trong JSON output.
-- **Full 5-query smoke re-run** (`scripts/week1_smoke.py`): tổng **$0.7565** · **2429.5s** wallclock · 5/5 ok. So với baseline Tuần 1 trong repo (**$0.1282** · **178.8s**): chênh chủ yếu do **Critic** (thêm structured Sonnet/sub-q) + **hybrid corpus + web + cross-encoder rerank** (CPU ~30–80s/retrieval batch lần đầu) + plan dài hơn (5–7 sub-q thay vì 1–7). Mỗi query có `langfuse_trace_id` / `langfuse_trace_url` trong `week1_metrics.json`. Script ghi thêm **retrieval**: `evidence_hits_by_source` (corpus vs web) + `retriever_details` (`n_corpus`/`n_web`/`retrieval_path`/`n_pool`/`n_after_rerank` per sub-q). **Cảnh báo**: 3/5 lần chạy log `Max iterations reached (8)` (query RAG so với fine-tuning, o3 vs R1, vector DB) — cần tune `max_iterations` hoặc Critic/retry nếu muốn hoàn tất mọi sub-q trước report.
+- **Full 5-query smoke re-run** (`scripts/smoke_eval.py`): tổng **$0.7565** · **2429.5s** wallclock · 5/5 ok. So với baseline Tuần 1 trong repo (**$0.1282** · **178.8s**): chênh chủ yếu do **Critic** (thêm structured Sonnet/sub-q) + **hybrid corpus + web + cross-encoder rerank** (CPU ~30–80s/retrieval batch lần đầu) + plan dài hơn (5–7 sub-q thay vì 1–7). Mỗi query có `langfuse_trace_id` / `langfuse_trace_url` trong `smoke_metrics.json`. Script ghi thêm **retrieval**: `evidence_hits_by_source` (corpus vs web) + `retriever_details` (`n_corpus`/`n_web`/`retrieval_path`/`n_pool`/`n_after_rerank` per sub-q). **Cảnh báo**: 3/5 lần chạy log `Max iterations reached (8)` (query RAG so với fine-tuning, o3 vs R1, vector DB) — cần tune `max_iterations` hoặc Critic/retry nếu muốn hoàn tất mọi sub-q trước report.
 - **CLI entry**: `[project.scripts]` `research-assistant` → `uv run research-assistant "query"` (vẫn hỗ trợ `python -m research_assistant.cli`).
 - **bge-m3 default** (`config.py` / ADR-018): `embedding_model=BAAI/bge-m3`; chunking tokenizer `model_max_length` nới để PDF dài không cảnh báo 8k; `.env.example` ghi override `bge-small` khi cần lặp nhanh. **Sau khi pull**: chạy `uv run python scripts/ingest_seed_corpus.py --rebuild` để Chroma + `data/eval/ingest_manifest.json` khớp 1024-dim (CPU có thể ~30–60 phút / 819 chunk).
 - **Critic (draft)**: node `critic` sau `synthesizer`; metric đoạn+citation + structured Sonnet; retry → `retriever` + feedback vào synthesizer; `CRITIC_ENABLED=false` trong unit graph tests; ADR-017.
@@ -122,7 +122,7 @@ d:\research-assistant\
 │       └── test_factuality.py        # factuality eval (mock judge)
 ├── ui/app.py
 ├── scripts/
-│   ├── week1_smoke.py            # 5-query smoke; --ab; --with-router / --with-compare-sources
+│   ├── smoke_eval.py            # 5-query smoke; --ab; --with-router / --with-compare-sources
 │   ├── ingest_seed_corpus.py     # fetch → chunk → embed → upsert + manifest
 │   ├── run_retrieval_eval.py     # Recall@10/20, NDCG@10 (default: retrieval_eval_100.json)
 │   ├── run_citation_eval.py      # smoke MD → citation_coverage.json (paragraph [^N] coverage)
@@ -133,8 +133,8 @@ d:\research-assistant\
 │   ├── chroma/                   # (gitignored) Chroma PersistentClient store
 │   ├── raw/arxiv/                # (gitignored) cached arXiv PDFs
 │   └── eval/
-│       ├── week1_outputs.md
-│       ├── week1_metrics.json
+│       ├── smoke_outputs.md
+│       ├── smoke_metrics.json
 │       ├── ingest_manifest.json  # sau ingest: xem file (chunks / bge-m3) — rebuild khi đổi model
 │       ├── retrieval_eval_30.json  # 30 qrels legacy (EN, single-gold)
 │       ├── retrieval_eval_100.json  # 100 qrels: 70 EN + 30 VI, multi-gold
@@ -167,7 +167,7 @@ d:\research-assistant\
 7. [x] Langfuse tracing: detected qua `settings.langfuse_enabled` (chỉ mới log; instrument chi tiết để Tuần 2).
 8. [x] `agents/_llm.py` — shared LLM helper + USD cost estimator + `BudgetExceededError` pre-flight guard (ADR-011).
 9. [x] 31 unit test: state / prompts / web_search / agents / graph đều mock LLM + Tavily, không tốn API.
-10. [x] `scripts/week1_smoke.py` — chạy 5 query, lưu outputs + metrics.
+10. [x] `scripts/smoke_eval.py` — chạy 5 query, lưu outputs + metrics.
 
 ### Exit criteria Tuần 1 — ĐẠT
 | Tiêu chí | Kết quả |
@@ -193,7 +193,7 @@ d:\research-assistant\
 3. [x] **Rerank pipeline eval**: `run_rerank_retrieval_eval` + `iter_source_ids_reranked` (`eval/retrieval.py`); `rerank_hybrid_results` (`rag/reranker.py`); metrics thêm MRR + `precision@5` (`eval/metrics.py`). `run_retrieval_eval.py --with-rerank [--candidate-pool 50]` so sánh A với B; output JSON gồm `ab_delta`. ADR-022.
 
 4. [x] **Citation coverage batch**: `scripts/run_citation_eval.py` → `data/eval/citation_coverage.json` (≥ 80% target). Từ smoke outputs.
-   - **Result (2026-04-24)**: `week1_outputs.md` → mean **96.8%** (Q2 91.7%, Q3 92.3%, còn lại 100%); `paragraph_citation_stats` + skip tiêu đề smoke; `apply_full_body_insufficient_guard=False` cho báo cáo ghép nhiều mục. ADR-023.
+   - **Result (2026-04-24)**: `smoke_outputs.md` → mean **96.8%** (Q2 91.7%, Q3 92.3%, còn lại 100%); `paragraph_citation_stats` + skip tiêu đề smoke; `apply_full_body_insufficient_guard=False` cho báo cáo ghép nhiều mục. ADR-023.
 
 #### B. Tinh chỉnh stack (mục 5–7)
 
@@ -201,7 +201,7 @@ d:\research-assistant\
 
 6. [x] **Prompt caching**: `build_lc_messages` + `cache_control` ephemeral; Synthesizer: system tĩnh + parent query; Critic: system tĩnh + user prefix (query) | phần còn lại. `ANTHROPIC_PROMPT_CACHE_ENABLED`. ADR-020. *(Đo cost thực tế khi re-smoke.)*
 
-7. [x] **Smoke A/B + re-run**: CLI `--no-rerank`, `--no-critic`, `--max-iterations N`; state `max_iterations_reached`; `week1_smoke.py --ab` → `ab_compare` + cost delta. ADR-024. *(Chạy `uv run python scripts/week1_smoke.py --ab` khi sẵn API để ghi số liệu thật.)*
+7. [x] **Smoke A/B + re-run**: CLI `--no-rerank`, `--no-critic`, `--max-iterations N`; state `max_iterations_reached`; `smoke_eval.py --ab` → `ab_compare` + cost delta. ADR-024. *(Chạy `uv run python scripts/smoke_eval.py --ab` khi sẵn API để ghi số liệu thật.)*
 
 #### C. Đa ngôn ngữ + chất lượng (mục 8–9)
 
@@ -254,7 +254,7 @@ d:\research-assistant\
 
 9. [x] **`factuality_eval_20.json`** (`data/eval/factuality_eval_20.json`): 15 EN + 5 VI, mỗi query có 3–5 atomic gold claims; `eval/factuality.py` + `scripts/run_factuality_eval.py` (Sonnet judge: supported / contradicted / unsupported). ADR-029. *(Session 2026-04-29)*
 
-10. [x] **Smoke A/B mới**: `week1_smoke.py --with-router --with-compare-sources`; JSON ghi `router_plan_per_subq`, `n_conflicts`. *(Session 2026-04-29: state overrides + mọi lần chạy smoke đều ghi hai field này trong từng query.)*
+10. [x] **Smoke A/B mới**: `smoke_eval.py --with-router --with-compare-sources`; JSON ghi `router_plan_per_subq`, `n_conflicts`. *(Session 2026-04-29: state overrides + mọi lần chạy smoke đều ghi hai field này trong từng query.)*
 
 11. [x] **ADR-029** (factuality eval): `DECISIONS.md` — bộ 20 query, judge Sonnet, `eval/factuality.py`, `run_factuality_eval.py`. *(Session 2026-04-29.)*
 
@@ -274,11 +274,11 @@ d:\research-assistant\
 9. [x] **Critic agent** (draft) — kiểm citation coverage (paragraph `[^N]` metric), structured Sonnet (`critic_v1.jinja`) kiểm sub-question → retry `retriever` hoặc advance; `critic_enabled` tắt cho test. ADR-017.
 10. [x] **Swap sang bge-m3** + hướng dẫn re-embed (`ingest_seed_corpus.py --rebuild`); ADR-018; chunking fix tokenizer dài. *Manifest trong repo cập nhật khi bạn chạy ingest local xong.*
 11. [x] Chuyển `cli.py` vào `[project.scripts]` — `uv run research-assistant "query"` (PEP 621 `research-assistant = research_assistant.cli:main`; `python -m research_assistant.cli` vẫn tương đương).
-12. [x] Re-run full 5-query smoke — `data/eval/week1_metrics.json` + `week1_outputs.md` (trace id/url; corpus vs web + retriever step stats; delta so với file metrics cũ khi chạy).
+12. [x] Re-run full 5-query smoke — `data/eval/smoke_metrics.json` + `smoke_outputs.md` (trace id/url; corpus vs web + retriever step stats; delta so với file metrics cũ khi chạy).
 
 ### Notes / cảnh báo ghi nhớ
 - Haiku 4.5 pricing trong `agents/_llm.py._PRICING_USD_PER_MTOK` đang là ước lượng conservative (input $1 / output $5 per MTok). Cần kiểm lại tại `https://www.anthropic.com/pricing` khi có thời gian và cập nhật nếu lệch > 20%.
-- Console Windows mặc định cp1252; `scripts/week1_smoke.py` đã force UTF-8 cho stdout, nhưng nếu viết thêm CLI có tiếng Việt cần apply cùng pattern.
+- Console Windows mặc định cp1252; `scripts/smoke_eval.py` đã force UTF-8 cho stdout, nhưng nếu viết thêm CLI có tiếng Việt cần apply cùng pattern.
 - `.env.example` từng bị user paste nhầm key thật (ngày hôm nay); đã revert về placeholder. **Luôn** double-check trước khi commit.
 - pymupdf extract text một số paper có figure → ra unicode garbage (e.g. "ҼНҞБЈП" trong ReAct Figure 1). Chấp nhận cho dev; nếu precision@k bị kéo xuống thì thêm filter regex lọc chunk có > 20% non-printable trước embed.
 - Embedding CPU chạy 3.4 ch/s — với 766 chunks hết ~4 phút. Khi tăng corpus lên 50–100 docs (≈4-5 nghìn chunks) sẽ 20–25 phút. Nếu có GPU, đổi `EMBEDDING_DEVICE=cuda` trong `.env`.
@@ -312,8 +312,8 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`PROGRESS.md`**: Phase chuyển sang post–Tuần 4; tick **mục 12** (docs); checklist Tuần 4 **12/12**.
 - **Next**: **Tuần 5** theo `PLAN.md` — guardrails, budget, Langfuse polish, v.v.
 
-### 2026-04-29 — Session 34 (week1_smoke router / conflicts JSON)
-- **`week1_smoke.py`**: `--with-router` (force tool router on), `--with-compare-sources` (force `compare_sources` = `auto`); `run_research(..., tool_router_enabled_override=..., compare_sources_mode_override=...)`.
+### 2026-04-29 — Session 34 (smoke_eval router / conflicts JSON)
+- **`smoke_eval.py`**: `--with-router` (force tool router on), `--with-compare-sources` (force `compare_sources` = `auto`); `run_research(..., tool_router_enabled_override=..., compare_sources_mode_override=...)`.
 - **State** ADR-style fields: `tool_router_enabled_override`, `compare_sources_mode_override`; retriever / `compare_sources_node` đọc override.
 - **Metrics** mỗi query: `router_plan_per_subq` (router cuối cùng theo thứ tự plan), `n_conflicts` (tổng items trong `conflict_reports`); `run_flags` / `ab_compare` ghi cờ `with_*`.
 - **Next**: *(Tuần 4 docs — session 35.)*
@@ -357,7 +357,7 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
   - `graph/research_graph.py` — LangGraph `planner → retriever → synthesizer → tick → {loop | reporter}`, retriever là closure để inject search_fn mock trong test.
   - `ui/app.py` (Streamlit): sidebar cấu hình + credential status, stream trace real-time, metrics panel, debug JSON.
   - `cli.py` — argparse, `--out`, `--language`, `--max-iterations`, exit code chuẩn.
-  - `scripts/week1_smoke.py` — orchestrate 5 query, ghi `data/eval/week1_outputs.md` + `week1_metrics.json`.
+  - `scripts/smoke_eval.py` — orchestrate 5 query, ghi `data/eval/smoke_outputs.md` + `smoke_metrics.json`.
 - **Test**: 31 unit test (state/prompts/web_search/agents/graph), mock LLM + Tavily nên 0 cost. `pytest -q` chạy 2.77s.
 - **Toolchain final**: `ruff check` ✓ · `ruff format --check` ✓ (29 files) · `mypy` strict ✓ (18 src files) · `pytest` 31/31 ✓.
 - **Smoke test 5 query thật** (cost breakdown):
@@ -374,7 +374,7 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **Fix 1 — Planner**: `agents/_llm.py` tách helper `_preflight_budget_check` + `_normalise_text`, thêm `invoke_structured_llm(model, prompt, schema, ...)` trả `(parsed: BaseModel, LLMCallResult)` bằng `with_structured_output(include_raw=True)`. Planner rewrite: định nghĩa `_PlanDraft` + `_PlanItemDraft` (no min_length ở draft — validation chặt dời sang `SubQuestion`), hàm `_drafts_to_plan` renumber ids + drop unknown dependency_ids. Prompt đơn giản hoá (bỏ phần "return JSON only"), field description gắn thẳng trên schema.
 - **Fix 2 — Retriever**: `tools/web_search.py` thêm `_YEAR_PATTERN`/`_IN_YEAR_PATTERN`, helper `_simplify_query`, và `web_search_with_fallback(query, ...)` theo ladder basic → advanced → simplified-advanced. `graph/research_graph.py` đổi default `search_fn` sang hàm fallback.
 - **Tests**: update `test_agents.py` (stub `invoke_structured_llm`, loại test JSON-markdown-wrapped, thêm case drop unknown deps + invalid draft), thêm 4 case fallback ladder trong `test_web_search.py`, refactor `test_graph.py` sang dual-stub (planner structured + synthesizer llm). Total 36 pass (từ 31).
-- **Verify thực tế**: `verify_q1.md` (LoRA/QLoRA, VI) plan 5 sub-q · cost $0.0333 · 25 refs. `verify_q4.md` (vector DB, EN) plan 6 sub-q · cost $0.0389 · 30 refs (tất cả sub-q có evidence). Files đã xoá sau verify (không cần giữ như regression baseline — `data/eval/week1_outputs.md` vẫn là baseline chính).
+- **Verify thực tế**: `verify_q1.md` (LoRA/QLoRA, VI) plan 5 sub-q · cost $0.0333 · 25 refs. `verify_q4.md` (vector DB, EN) plan 6 sub-q · cost $0.0389 · 30 refs (tất cả sub-q có evidence). Files đã xoá sau verify (không cần giữ như regression baseline — `data/eval/smoke_outputs.md` vẫn là baseline chính).
 - **Blocker**: không. Còn observation: câu trả lời "Insufficient evidence" trong query 4 xuất phát từ Synthesizer không tìm được fact cụ thể trong snippet — cần Critic/RAG sâu hơn để khắc phục, sẽ vào Tuần 2.
 - **Next**: Langfuse `@observe` instrumentation + bắt đầu RAG ingestion.
 
@@ -418,7 +418,7 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
   - Nodes `planner`/`synthesizer`/`reporter` được `@observe` span riêng; planner làm fallback capture `trace_id/url` nếu run ngoài `run_research`.
   - `graph/state.py`: thêm `trace_id: str | None` + `trace_url: str | None` vào `ResearchState` + `new_state()`.
   - `prompts/reporter_v1.jinja`: footer `{% set has_trace = (trace_url is defined) and trace_url %}{% if has_trace %}*Full trace on Langfuse*: [URL]{% endif %}`. `agents/reporter.py.build_report` thêm tham số `trace_url`.
-  - `cli.py`, `scripts/week1_smoke.py`: migrate sang `run_research(...)` thay vì gọi `build_graph() + invoke`. `cli.py` force stdout UTF-8 trên Windows (tránh `UnicodeEncodeError` trên em-dash / diacritics).
+  - `cli.py`, `scripts/smoke_eval.py`: migrate sang `run_research(...)` thay vì gọi `build_graph() + invoke`. `cli.py` force stdout UTF-8 trên Windows (tránh `UnicodeEncodeError` trên em-dash / diacritics).
   - `ui/app.py`: `graph.stream(...)` ôm trong `start_agent_span("research_agent")` context; sau stream set `final_state["trace_url"] = current_trace_url()`; `flush()` cuối handler.
 - **Test hermeticity**: thêm `tests/conftest.py` autouse fixture (`monkeypatch` set `LANGFUSE_PUBLIC_KEY=""`/`LANGFUSE_SECRET_KEY=""` + `get_settings.cache_clear()`) → loại hoàn toàn 401 spam. Thêm `tests/unit/test_observability.py` (5 cases).
 - **Fix `_client()` init**: bug phát hiện khi verify — `langfuse.get_client()` đọc env vars nên thấy empty dù `Settings.langfuse_enabled` True. Sửa: instantiate explicit `Langfuse(public_key=s.langfuse_public_key.get_secret_value(), secret_key=..., host=...)`, cache singleton, gọi `_client()` ngay đầu mỗi observed wrapper để SDK `@observe` sau đó tìm thấy client toàn cục.
@@ -478,7 +478,7 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`cli.py`**: docstring Usage cập nhật (ưu tiên lệnh script, ghi thêm dạng `-m`).
 
 ### 2026-04-23 — Session 14 (Full smoke re-run + retrieval metrics in JSON)
-- **`scripts/week1_smoke.py`**: `_aggregate_retrieval_stats` (evidence `corpus`/`web` + `retriever_details` từ `StepLog`); đọc `week1_metrics.json` cũ trước khi ghi để thêm `delta_vs_previous_file` (cost + wallclock); stdout in một dòng delta.
+- **`scripts/smoke_eval.py`**: `_aggregate_retrieval_stats` (evidence `corpus`/`web` + `retriever_details` từ `StepLog`); đọc `smoke_metrics.json` cũ trước khi ghi để thêm `delta_vs_previous_file` (cost + wallclock); stdout in một dòng delta.
 - **Chạy thực tế 5 query**: tổng $0.7565 · 2429.5s; mỗi query có `langfuse_trace_id` / `langfuse_trace_url`. 3 query chạm `max_iterations=8` (critic+retry ăn iteration).
 - **Next**: tùy ưu tiên — tăng `max_iterations` hoặc giảm critic retry; hoặc re-run `run_retrieval_eval.py` sau ingest.
 
@@ -568,7 +568,7 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **ADR-025** trong `DECISIONS.md`.
 
 ### 2026-04-25 — Session 21 (Smoke flags + A/B)
-- **ADR-024**: CLI `--no-rerank` / `--no-critic`; `no_cross_encoder_rerank_fn`; `critic_enabled_override` + planner planned cap khi tắt Critic; reporter ghi `max_iterations_reached`; `week1_smoke.py` argparse, `--ab`, payload `mode` / `run_flags` / `ab_compare`.
+- **ADR-024**: CLI `--no-rerank` / `--no-critic`; `no_cross_encoder_rerank_fn`; `critic_enabled_override` + planner planned cap khi tắt Critic; reporter ghi `max_iterations_reached`; `smoke_eval.py` argparse, `--ab`, payload `mode` / `run_flags` / `ab_compare`.
 - **Tests**: `test_state`, `test_graph`, `test_agents` (planner cap khi critic off).
 - **Next**: Tuần 3 mục 8–9 (language eval, HyDE).
 
@@ -587,7 +587,7 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 - **`paragraph_citation_stats`** (`agents/critic.py`): tham số `apply_full_body_insufficient_guard` (mặc định giữ hành vi Critic); `skip_paragraph` giữ nguyên.
 - **`eval/smoke_citation.py`**: parse `# Query N (VI|EN):`, tách body (bỏ plan + References), skip heading/placeholder/đoạn disclaimer; gọi stats với guard tắt.
 - **`scripts/run_citation_eval.py`**: `--smoke-md`, `--out`, `--target-mean`, `--strict-exit`.
-- **Chạy**: `week1_outputs.md` → mean coverage **0.968**, `meets_target` ✓ (target 0.8).
+- **Chạy**: `smoke_outputs.md` → mean coverage **0.968**, `meets_target` ✓ (target 0.8).
 - **Tests**: `test_smoke_citation.py`, mở rộng `test_critic.py`.
 - **Next**: Tuần 3 mục 5–7 (max_iterations, prompt cache, smoke flags).
 

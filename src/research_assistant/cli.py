@@ -43,7 +43,7 @@ def _configure_logging(level: str) -> None:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="research-assistant",
-        description="Run a single research query through the Week-1 agent graph.",
+        description="Run a single research query through the agent graph.",
     )
     parser.add_argument("query", help="The research question (wrap in quotes).")
     parser.add_argument(

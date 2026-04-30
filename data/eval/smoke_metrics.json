@@ -433,7 +433,7 @@
     }
   ],
   "delta_vs_previous_file": {
-    "path": "D:\\research-assistant\\data\\eval\\week1_metrics.json",
+    "path": "D:\\research-assistant\\data\\eval\\smoke_metrics.json",
     "cost_delta_usd": 0.628283,
     "wallclock_delta_s": 2250.72,
     "previous_total_cost_usd": 0.128214,

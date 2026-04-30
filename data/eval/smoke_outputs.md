@@ -1,6 +1,6 @@
-# Research Assistant — Week 1 Smoke Test Outputs
+# Research Assistant — Smoke eval outputs
 
-Generated from `scripts/week1_smoke.py` across 5 queries.
+Generated from `scripts/smoke_eval.py` across 5 queries.
 Total cost: $0.7565 · Total wallclock: 2429.5s
 
 
