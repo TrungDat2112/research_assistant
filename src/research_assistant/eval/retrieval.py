@@ -1,5 +1,3 @@
-"""Load retrieval eval JSON and run stage-1 hybrid and optional re-rank metrics."""
-
 from __future__ import annotations
 
 import json
@@ -35,7 +33,6 @@ class RetrievalEvalFile(BaseModel):
 
 
 def load_retrieval_eval(path: Path) -> list[RetrievalEvalItem]:
-    """Parse ``retrieval_eval_30.json`` / ``retrieval_eval_100.json`` (or compatible)."""
     raw = path.read_text(encoding="utf-8")
     data = json.loads(raw)
     payload = RetrievalEvalFile.model_validate(data)
@@ -53,7 +50,6 @@ def iter_source_ids_with_meta(
     where: dict[str, Any] | None = None,
     use_hyde: bool = False,
 ) -> tuple[list[str], dict[str, Any]]:
-    """Like :func:`iter_source_ids` but returns per-query HyDE metadata."""
     hyde_meta: dict[str, Any] = {}
     if query_vec is None:
         qvec, hyde_meta = dense_embedding_for_retrieval(
@@ -92,7 +88,6 @@ def iter_source_ids(
     where: dict[str, Any] | None = None,
     use_hyde: bool = False,
 ) -> list[str]:
-    """Run stage-1 hybrid and return ``source_id`` for each chunk (ranked)."""
     ranked, _ = iter_source_ids_with_meta(
         store,
         bm25_index,
@@ -119,7 +114,6 @@ def iter_source_ids_reranked(
     cross_encoder: Any | None = None,
     use_hyde: bool = False,
 ) -> list[str]:
-    """Stage-1 hybrid pool (``candidate_pool``) then cross-encoder re-rank to ``final_top_k``."""
     if final_top_k > candidate_pool:
         raise ValueError("final_top_k must be <= candidate_pool for re-rank eval")
     if query_vec is None:
@@ -162,7 +156,6 @@ def run_hybrid_retrieval_eval(
     k_recall: tuple[int, ...] = (10, 20),
     use_hyde: bool = False,
 ) -> dict[str, Any]:
-    """Macro-averaged recall@k and mean NDCG@10; stage-1 hybrid only (no re-rank)."""
     if final_top_k < max(k_recall, default=10):
         raise ValueError("final_top_k must be >= max(k_recall)")
 
@@ -225,7 +218,6 @@ def run_rerank_retrieval_eval(
     cross_encoder: Any | None = None,
     use_hyde: bool = False,
 ) -> dict[str, Any]:
-    """Same metrics as :func:`run_hybrid_retrieval_eval` after cross-encoder re-ordering."""
     if final_top_k < max(k_recall, default=10):
         raise ValueError("final_top_k must be >= max(k_recall)")
     if final_top_k > candidate_pool:

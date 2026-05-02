@@ -1,10 +1,3 @@
-"""Citation coverage over concatenated smoke Markdown reports (``smoke_outputs.md``).
-
-Uses the same paragraph + ``[^N]`` heuristic as :func:`paragraph_citation_stats`,
-with extra skips for reporter-only Markdown (numbered section headers, bare
-headings, placeholder sub-answers).
-"""
-
 from __future__ import annotations
 
 import re
@@ -49,7 +42,6 @@ def _is_no_synthesized_placeholder(p: str) -> bool:
 
 
 def _is_insufficient_paragraph(p: str) -> bool:
-    """Single-paragraph no-evidence disclaimers (aligned with Critic body check)."""
     t = p.lower()
     return (
         "insufficient evidence" in t
@@ -59,7 +51,6 @@ def _is_insufficient_paragraph(p: str) -> bool:
 
 
 def skip_smoke_report_paragraph(p: str) -> bool:
-    """Paragraphs that should not affect citation coverage on stitched reports."""
     return (
         _is_numbered_section_header(p)
         or _is_markdown_heading_only(p)
@@ -70,7 +61,6 @@ def skip_smoke_report_paragraph(p: str) -> bool:
 
 
 def extract_report_body(query_block: str) -> str:
-    """Drop front matter and reference list; keep numbered answer sections only."""
     m_ref = _REF_SECTION_RE.search(query_block)
     body = query_block[: m_ref.start()] if m_ref else query_block
     m_first = re.search(r"^##\s+\d+\.\s", body, re.MULTILINE)
@@ -81,8 +71,6 @@ def extract_report_body(query_block: str) -> str:
 
 @dataclass(frozen=True)
 class SmokeQueryCitation:
-    """Per-query citation stats on a smoke report body."""
-
     query_index: int
     language: Literal["vi", "en"]
     title: str
@@ -92,7 +80,6 @@ class SmokeQueryCitation:
 
 
 def parse_smoke_markdown(md: str) -> list[SmokeQueryCitation]:
-    """Split ``smoke_outputs.md``-style file and score each query report."""
     matches = list(_QUERY_HEADER_RE.finditer(md))
     if not matches:
         msg = "no '# Query N (VI|EN):' headers found — expected smoke_outputs.md"
@@ -130,7 +117,6 @@ def run_smoke_citation_eval(
     *,
     target_mean_coverage: float,
 ) -> dict[str, Any]:
-    """Load smoke Markdown and build a JSON-serialisable result dict."""
     text = smoke_md_path.read_text(encoding="utf-8")
     rows = parse_smoke_markdown(text)
     mean_cov = sum(r.paragraph_citation_coverage for r in rows) / len(rows)

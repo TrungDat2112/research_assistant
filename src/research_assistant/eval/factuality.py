@@ -1,9 +1,3 @@
-"""Factuality eval: LLM judge labels each atomic gold claim vs the report (Tuần 4).
-
-Verdicts: **supported**, **contradicted**, **unsupported** relative to the Markdown report
-(including claims backed by `[^N]` references). Used by :mod:`scripts.run_factuality_eval`.
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,8 +20,6 @@ _MAX_REPORT_CHARS = 120_000
 
 
 class FactualityEvalItem(BaseModel):
-    """One evaluation row: user query + atomic claims checkable against an answer."""
-
     id: str = Field(..., min_length=1)
     query: str = Field(..., min_length=8)
     language: Literal["en", "vi"] = "en"
@@ -41,8 +33,6 @@ class _FactualityEvalFile(BaseModel):
 
 
 class FactualityClaimJudgment(BaseModel):
-    """Structured row: one verdict per gold claim index."""
-
     claim_index: int = Field(..., ge=0)
     verdict: FactualityVerdict
     rationale_brief: str = Field(
@@ -52,20 +42,16 @@ class FactualityClaimJudgment(BaseModel):
 
 
 class FactualityJudgeOutput(BaseModel):
-    """Full judge response; ``judgments`` must cover every gold claim index."""
-
     judgments: list[FactualityClaimJudgment]
 
 
 def clip_report_for_judge(report_markdown: str, *, max_chars: int = _MAX_REPORT_CHARS) -> str:
-    """Bound report size sent to the judge."""
     if len(report_markdown) <= max_chars:
         return report_markdown
     return report_markdown[:max_chars] + "\n\n[... report truncated for judge context ...]\n"
 
 
 def load_factuality_eval(path: Path) -> list[FactualityEvalItem]:
-    """Load and validate ``factuality_eval_*.json`` (Pydantic + claim counts)."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     bundle = _FactualityEvalFile.model_validate(raw)
     for it in bundle.items:
@@ -80,7 +66,6 @@ def normalize_judgments(
     gold_claims: list[str],
     parsed: FactualityJudgeOutput,
 ) -> list[dict[str, Any]]:
-    """Align judge output to ``0..n-1``; missing indices become **unsupported**."""
     n = len(gold_claims)
     by_idx: dict[int, FactualityClaimJudgment] = {}
     for j in parsed.judgments:
@@ -111,7 +96,6 @@ def normalize_judgments(
 
 
 def per_query_supported_ratio(judgment_rows: list[dict[str, Any]]) -> float:
-    """Fraction of claims labeled **supported** for one query."""
     if not judgment_rows:
         return 0.0
     ok = sum(1 for r in judgment_rows if r.get("verdict") == "supported")
@@ -119,7 +103,6 @@ def per_query_supported_ratio(judgment_rows: list[dict[str, Any]]) -> float:
 
 
 def macro_mean_supported_ratio(query_results: list[dict[str, Any]]) -> float:
-    """Macro mean of ``supported_ratio`` over queries with ``status == ok``."""
     ratios: list[float] = []
     for row in query_results:
         if row.get("status") != "ok":
@@ -144,15 +127,7 @@ def judge_factuality(
     per_query_cap_usd: float | None = None,
     use_prompt_cache: bool | None = False,
 ) -> tuple[list[dict[str, Any]], LLMCallResult]:
-    """Judge all gold claims at once (Sonnet structured output).
 
-    Returns
-    -------
-    judgments :
-        Normalized list of dicts with ``claim_index``, ``claim``, ``verdict``, ``rationale_brief``.
-    result :
-        Token/cost metadata from the judge call.
-    """
     settings = get_settings()
     m = model or settings.anthropic_planner_model
     claims_block = "\n".join(f"{i}. {c}" for i, c in enumerate(gold_claims))
@@ -179,7 +154,6 @@ def judge_factuality(
 
 
 def validate_eval_counts(items: list[FactualityEvalItem]) -> None:
-    """Assert 15 EN + 5 VI and 20 items (convenience for CI fixtures)."""
     if len(items) != 20:
         raise ValueError(f"expected 20 items, got {len(items)}")
     n_en = sum(1 for x in items if x.language == "en")
@@ -197,10 +171,6 @@ class PreparedFactualityReportItem:
 
 
 def load_factuality_reports_json(path: Path) -> list[PreparedFactualityReportItem]:
-    """Load ``--reports-json``::
-
-    { "queries": [ { "query", "language", "gold_claims", "report" } ] }
-    """
     raw = json.loads(path.read_text(encoding="utf-8"))
     arr = raw.get("queries")
     if not isinstance(arr, list):
@@ -245,7 +215,6 @@ def build_eval_payload(
     total_wallclock_research_s: float,
     total_wallclock_judge_s: float,
 ) -> dict[str, Any]:
-    """Top-level JSON shape written by :mod:`scripts.run_factuality_eval`."""
     return {
         "version": 1,
         "created_at": datetime.now(tz=UTC).isoformat(),

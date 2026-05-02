@@ -1,5 +1,3 @@
-"""Offline evaluation: retrieval metrics, future factuality harness."""
-
 from research_assistant.eval.metrics import (
     dcg_at_k,
     ndcg_at_k,

@@ -1,9 +1,3 @@
-"""LLM-as-judge rubric for VI/EN report quality (Tuần 3).
-
-Four axes: accuracy, fluency, terminology, citation - each scored 1-5.
-Used by :mod:`scripts.run_language_quality_eval`.
-"""
-
 from __future__ import annotations
 
 import json
@@ -40,8 +34,6 @@ DEFAULT_QUERIES_EN: tuple[str, ...] = (
 
 
 class LanguageQualityScores(BaseModel):
-    """Structured verdict from the judge model."""
-
     accuracy: int = Field(..., ge=1, le=5)
     fluency: int = Field(..., ge=1, le=5)
     terminology: int = Field(..., ge=1, le=5)
@@ -53,7 +45,6 @@ class LanguageQualityScores(BaseModel):
 
 
 def clip_report_for_judge(report_markdown: str, *, max_chars: int = _MAX_REPORT_CHARS) -> str:
-    """Bound context size for the judge call."""
     if len(report_markdown) <= max_chars:
         return report_markdown
     return report_markdown[:max_chars] + "\n\n[... report truncated for judge context ...]\n"
@@ -69,7 +60,6 @@ def judge_language_quality(
     per_query_cap_usd: float | None = None,
     use_prompt_cache: bool | None = False,
 ) -> tuple[LanguageQualityScores, LLMCallResult]:
-    """Score one report on the four rubric axes (Sonnet structured output)."""
     settings = get_settings()
     m = model or settings.anthropic_planner_model
     system = render(
@@ -96,7 +86,6 @@ def judge_language_quality(
 
 
 def mean_over_axes(rows: list[dict[str, Any]]) -> dict[str, float]:
-    """Macro mean per axis from query result dicts with ``scores`` nested dict."""
     if not rows:
         return dict.fromkeys(AXES, 0.0)
     sums = dict.fromkeys(AXES, 0.0)
@@ -129,7 +118,6 @@ class PreparedReportItem:
 
 
 def load_reports_json(path: Path) -> list[PreparedReportItem]:
-    """Load ``--reports-json`` file: ``{ "queries": [ { "query", "language", "report" } ] }``."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     items = raw.get("queries")
     if not isinstance(items, list):
@@ -166,7 +154,6 @@ def build_eval_payload(
     total_wallclock_judge_s: float,
     baseline_comparison: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Top-level JSON shape written by the script."""
     return {
         "version": 1,
         "created_at": datetime.now(tz=UTC).isoformat(),
@@ -189,7 +176,6 @@ def compare_to_baseline(
     current: dict[str, Any],
     previous_path: Path,
 ) -> dict[str, Any]:
-    """Compute simple deltas vs a prior ``language_quality.json`` run."""
     prev = json.loads(previous_path.read_text(encoding="utf-8"))
     p_mean = prev.get("mean_by_axis")
     c_mean = current.get("mean_by_axis")

@@ -1,5 +1,3 @@
-"""IR-style metrics for ranked chunk lists with binary (source-level) relevance."""
-
 from __future__ import annotations
 
 import math
@@ -9,7 +7,6 @@ _T = TypeVar("_T", bound=str)
 
 
 def dcg_at_k(relevances: list[int], k: int) -> float:
-    """Discounted cumulative gain; binary or graded relevance at each rank (0-based)."""
     if k <= 0:
         return 0.0
     s = 0.0
@@ -20,7 +17,6 @@ def dcg_at_k(relevances: list[int], k: int) -> float:
 
 
 def ndcg_at_k(relevances: list[int], k: int) -> float:
-    """NDCG@k: DCG@k / IDCG@k; IDCG = DCG of ideal (relevances sorted descending)."""
     if k <= 0:
         return 0.0
     rels = relevances[:k]
@@ -36,7 +32,6 @@ def reciprocal_rank_first_relevant(
     ranked_source_ids: list[_T],
     gold_source_ids: set[_T],
 ) -> float:
-    """MRR-style: reciprocal of 1-based rank of the first chunk whose source is in ``gold``."""
     for i, sid in enumerate(ranked_source_ids):
         if sid in gold_source_ids:
             return 1.0 / float(i + 1)
@@ -48,7 +43,6 @@ def precision_at_k(
     gold_source_ids: set[_T],
     k: int,
 ) -> float:
-    """Fraction of the first ``k`` ranked chunk positions that are relevant (binary per chunk)."""
     if k <= 0:
         return 0.0
     head = ranked_source_ids[:k]
@@ -60,11 +54,7 @@ def source_recall_in_top_k(
     gold_source_ids: set[_T],
     k: int,
 ) -> float:
-    """|gold ∩ (first k chunks' sources)| / |gold|; gold must be non-empty for callers.
 
-    A single document may appear in multiple top-k chunks; the union of sources
-    in positions ``1..k`` is used.
-    """
     if not gold_source_ids:
         return 0.0
     head = set(ranked_source_ids[:k])
@@ -78,7 +68,6 @@ def per_query_metrics(
     *,
     precision_ks: tuple[int, ...] = (5,),
 ) -> dict[str, float]:
-    """Compute recall@k, NDCG@10, MRR, and precision@k (default *k*=5) for one query."""
     k_max = max(k_list) if k_list else 10
     pk_max = max(precision_ks, default=0)
     need = max(k_max, pk_max, 10)
