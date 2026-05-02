@@ -1,0 +1,60 @@
+# CI — ruff, mypy, pytest (no API keys; tests mock external services).
+# Branch / trigger policy: see PROGRESS / handoff docs (main + PR + manual).
+
+name: CI
+
+# --- Step 6 — Permissions & queue -------------------------------------------------
+# Minimal GITHUB_TOKEN: read repo for checkout/sync only — no deployments, secrets, or content writes here.
+# If CI fails immediately with permission errors (uncommon): repo Settings → Actions → General →
+#   "Workflow permissions" must allow workflows to run; org-owned repos may impose stricter defaults.
+# Fork PR workflows: forks from outside collaborators may show "Approve and run" once (GitHub gate).
+#
+# Queue: At most one active run per ref (same branch name or merge ref for PR #N). Older runs on that
+# ref are cancelled — saves Actions minutes without blocking unrelated branches.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Step 6 (queue): one group per workflow + ref → cancel stale runs when pushing again.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Step 4: uv on PATH, managed Python 3.11 (UV_PYTHON), wheel cache from uv.lock/pyproject.toml.
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          version: "0.11.7"
+          python-version: "3.11"
+          enable-cache: true
+          cache-python: true
+
+      - name: Sync dependencies
+        run: uv sync --all-extras --frozen
+
+      # Step 5 — AGENTS.md §2.3 + §7 (format → lint → mypy strict → pytest; no API keys).
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Mypy
+        run: uv run mypy src/research_assistant
+
+      - name: Pytest
+        run: uv run pytest
