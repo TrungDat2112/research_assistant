@@ -1,23 +1,3 @@
-"""Application configuration loaded from environment variables / ``.env``.
-
-Single source of truth for runtime settings. Downstream modules should call
-:func:`get_settings` (cached) instead of reading ``os.environ`` directly.
-
-Grounded in:
-  * ADR-007 — output language default ``vi``.
-  * ADR-008 — Anthropic Claude for Planner/Critic and Synthesizer.
-  * ADR-009 — Langfuse Cloud for observability.
-  * ADR-011 — hard budget caps ($10 total, $0.30 per query).
-  * ADR-019 — ``max_iterations`` raised after planner from plan size + Critic attempts.
-  * ADR-020 — Anthropic prompt caching on static system + repeating user prefix.
-  * ADR-018 — default dense embedding ``BAAI/bge-m3`` (override with
-    ``EMBEDDING_MODEL`` for English-only fast iteration).
-  * ADR-026 — optional HyDE (hypothetical document embedding) for weak hybrid probe.
-  * ADR-027 — rule-based tool router (intent → ordered retrieval tools).
-  * ADR-028 — compare_sources (heuristic + optional Sonnet) before Critic.
-  * ADR-030 — Critic four-axis rubric (faithfulness/completeness/consistency + citation).
-"""
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -31,11 +11,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    """Typed view over environment variables.
 
-    Fields with ``SecretStr`` are redacted in ``repr`` and must be accessed
-    via ``.get_secret_value()`` to obtain the raw credential.
-    """
 
     model_config = SettingsConfigDict(
         env_file=_REPO_ROOT / ".env",
@@ -44,7 +20,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ---- LLM provider (ADR-008) -----------------------------------------
     anthropic_api_key: SecretStr = Field(
         default=SecretStr(""),
         description="Anthropic API key. Required to run agents; empty default "
@@ -62,18 +37,16 @@ class Settings(BaseSettings):
     anthropic_prompt_cache_enabled: bool = Field(
         default=True,
         description="When True, mark static system text and repeating user-query prefix "
-        "with Anthropic ephemeral prompt cache (reuse across sub-questions). ADR-020.",
+        "with Anthropic ephemeral prompt cache (reuse across sub-questions).",
     )
 
     # ---- Web search (Tavily) --------------------------------------------
     tavily_api_key: SecretStr = Field(default=SecretStr(""))
 
-    # ---- Observability (Langfuse Cloud, ADR-009) ------------------------
     langfuse_public_key: SecretStr = Field(default=SecretStr(""))
     langfuse_secret_key: SecretStr = Field(default=SecretStr(""))
     langfuse_host: str = Field(default="https://cloud.langfuse.com")
 
-    # ---- Budget guardrails (ADR-011) ------------------------------------
     max_budget_usd: float = Field(default=10.0, ge=0.0)
     budget_alert_usd: float = Field(default=7.0, ge=0.0)
     per_query_cap_usd: float = Field(default=0.30, gt=0.0)
@@ -83,17 +56,14 @@ class Settings(BaseSettings):
         default=8,
         ge=1,
         le=64,
-        description="Default iteration cap before planner runs; after planner ADR-019 "
+        description="Default iteration cap before planner runs; "
         "raises this to at least max(8, len(plan) * critic_max_attempts_per_sub_question), "
         "or higher if CLI/env set a larger value.",
     )
     output_language: Literal["vi", "en"] = Field(default="vi")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO")
 
-    # ---- RAG (ADR-013 + ADR-018) ----------------------------------------
-    # Default ``bge-m3`` for multilingual / Vietnamese-ready indexing. For
-    # fast iteration on English-only corpora, set ``EMBEDDING_MODEL`` to
-    # ``BAAI/bge-small-en-v1.5`` and run ``ingest_seed_corpus.py --rebuild``.
+
     embedding_model: str = Field(
         default="BAAI/bge-m3",
         description="Sentence-transformers model id for dense embeddings.",
@@ -114,7 +84,7 @@ class Settings(BaseSettings):
         default=500,
         ge=128,
         le=2048,
-        description="Target chunk size in tokens (PLAN §5.1 / ADR-003).",
+        description="Target chunk size in tokens.",
     )
     chunk_overlap_tokens: int = Field(
         default=50,
@@ -127,7 +97,6 @@ class Settings(BaseSettings):
         description="Directory for cached raw source documents (PDF / HTML).",
     )
 
-    # ---- RAG stage 2 — cross-encoder (PLAN §5.2 / ADR-002) ---------------
     reranker_enabled: bool = Field(
         default=True,
         description="When True, retriever re-ranks merged candidates with a "
@@ -157,7 +126,7 @@ class Settings(BaseSettings):
     tool_router_enabled: bool = Field(
         default=True,
         description="When True, retriever uses heuristic intent → tool order "
-        "(vector / web / academic) before merge (ADR-027).",
+        "(vector / web / academic) before merge.",
     )
     tool_router_max_tools: int = Field(
         default=3,
@@ -166,7 +135,6 @@ class Settings(BaseSettings):
         description="Max distinct tools to run per sub-question when routing is enabled.",
     )
 
-    # ---- HyDE — optional dense query rewrite (PLAN §5.2) -----------------
     hyde_enabled: bool = Field(
         default=False,
         description="When True, weak hybrid top-2 probe may replace the dense embedding "
@@ -191,7 +159,6 @@ class Settings(BaseSettings):
         description="Max output tokens for the hypothetical passage (synthesizer model).",
     )
 
-    # ---- Critic (PLAN §6.2 / ADR-005) -----------------------------------
     critic_enabled: bool = Field(
         default=True,
         description="When False, the Critic auto-passes (tests / dry runs).",
@@ -207,38 +174,37 @@ class Settings(BaseSettings):
         ge=0.0,
         le=1.0,
         description="Reject drafts when deterministic paragraph citation coverage "
-        "falls below this threshold (ADR-005).",
+        "falls below this threshol.",
     )
     critic_min_faithfulness: float = Field(
         default=4.0,
         ge=1.0,
         le=5.0,
-        description="Minimum LLM faithfulness score (1-5) to pass without retry. ADR-030.",
+        description="Minimum LLM faithfulness score (1-5) to pass without retry.",
     )
     critic_min_completeness: float = Field(
         default=4.0,
         ge=1.0,
         le=5.0,
-        description="Minimum LLM completeness score (1-5) to pass without retry. ADR-030.",
+        description="Minimum LLM completeness score (1-5) to pass without retry.",
     )
     critic_min_consistency: float = Field(
         default=4.0,
         ge=1.0,
         le=5.0,
-        description="Minimum deterministic consistency score (from conflicts) to pass. ADR-030.",
+        description="Minimum deterministic consistency score (from conflicts) to pass.",
     )
     compare_sources_mode: Literal["off", "heuristic", "auto"] = Field(
         default="auto",
         description="Cross-source conflict scan before Critic: off / regex+units only / "
-        "auto (heuristic + Sonnet when comparative or heuristic hits). ADR-028.",
+        "auto (heuristic + Sonnet when comparative or heuristic hits).",
     )
 
     # ---- Validators -----------------------------------------------------
     @field_validator("budget_alert_usd")
     @classmethod
     def _alert_below_max(cls, v: float, info: object) -> float:
-        # Pydantic v2: values available via info.data, but we keep this simple
-        # — real cross-field enforcement happens in the budget tracker.
+
         return v
 
     # ---- Derived helpers -----------------------------------------------
@@ -263,20 +229,11 @@ class Settings(BaseSettings):
 
 
 def planned_max_iterations(num_sub_questions: int, critic_attempts_per_sub_question: int) -> int:
-    """Iteration budget after planning (ADR-019).
 
-    Each graph loop tick consumes one iteration when the Critic finishes a
-    sub-question (including retries). Worst case is roughly one Critic step
-    per attempt for every sub-question.
-    """
     return max(8, int(num_sub_questions) * int(critic_attempts_per_sub_question))
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return a cached :class:`Settings` instance.
 
-    Cached so that environment is parsed once per process. Tests that mutate
-    env vars should call :func:`get_settings.cache_clear`.
-    """
     return Settings()

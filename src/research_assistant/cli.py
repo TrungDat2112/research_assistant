@@ -1,23 +1,3 @@
-"""Command-line entry point for running the research graph end-to-end.
-
-Usage::
-
-    uv run research-assistant "Your research question here"
-
-    # Equivalent (module form)
-    uv run python -m research_assistant.cli "Your research question here"
-
-Options:
-    --language {vi,en}     Output language (default: from .env / vi).
-    --out PATH             Write the report to a file in addition to stdout.
-    --max-iterations N     Floor for iteration cap before planner; planner may
-                           raise it (ADR-019). Default: from .env.
-    --no-rerank            Skip cross-encoder rerank (stage-1 order, top-k slice).
-    --no-critic            Skip Critic LLM (auto-pass; tighter planned cap).
-
-Designed to be non-interactive so it can drive smoke-test scripts.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -124,10 +104,7 @@ def run(argv: list[str]) -> int:
         final_state.get("max_iterations_reached", False),
     )
 
-    # On Windows the default stdout codec is often cp1252, which can't
-    # encode Unicode characters frequently produced by the Synthesizer
-    # (em-dashes, curly quotes, Vietnamese diacritics). Force UTF-8 with
-    # ``errors="replace"`` so the process never crashes on encoding.
+
     _encoding = getattr(sys.stdout, "encoding", "") or ""
     if _encoding.lower() not in {"utf-8", "utf8"}:
         reconfigure = getattr(sys.stdout, "reconfigure", None)
