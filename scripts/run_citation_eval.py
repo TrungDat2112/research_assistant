@@ -1,14 +1,5 @@
 """Batch citation coverage from smoke Markdown (``smoke_outputs.md``).
 
-Computes mean paragraph-level ``[^N]`` coverage (same core heuristic as the
-Critic) over reporter output, with skips for section headings. Writes
-``data/eval/citation_coverage.json`` by default.
-
-Usage::
-
-    uv run python scripts/run_citation_eval.py
-    uv run python scripts/run_citation_eval.py --smoke-md path/to/outputs.md --out path/out.json
-    uv run python scripts/run_citation_eval.py --target-mean 0.85 --strict-exit
 """
 
 from __future__ import annotations

@@ -1,26 +1,5 @@
 """End-to-end smoke eval across five fixed seed queries (real APIs, costs money).
 
-Not a pytest test. Run::
-
-    uv run python scripts/smoke_eval.py
-
-    # A/B: base (no rerank, no critic) then tuned (settings defaults); cost delta
-    uv run python scripts/smoke_eval.py --ab
-
-    # Single pass with CLI flags (same knobs as ``research-assistant``)
-    uv run python scripts/smoke_eval.py --no-rerank --no-critic --max-iterations 16
-
-    # Force tool-router + compare_sources (overrides env for this run); JSON adds
-    # ``router_plan_per_subq`` / ``n_conflicts`` per query
-    uv run python scripts/smoke_eval.py --with-router --with-compare-sources
-
-Outputs:
-    * data/eval/smoke_outputs.md   — concatenated Markdown reports.
-    * data/eval/smoke_metrics.json — per-query cost / timing / citations /
-      ``max_iterations_reached`` / Langfuse ids / retrieval stats;
-      ``router_plan_per_subq`` / ``n_conflicts``; optional
-      ``ab_compare`` when ``--ab``; optional ``delta_vs_previous_file``.
-    * Prints a compact summary table to stdout at the end.
 """
 
 from __future__ import annotations

@@ -1,15 +1,6 @@
 """Factuality eval: 15 EN + 5 VI queries with atomic gold claims.
 
-Runs the research graph per query (unless ``--reports-json``), then Sonnet judge
-labels each claim **supported** / **contradicted** / **unsupported** vs the final
-report. Writes ``data/eval/factuality.json`` by default.
 
-Usage::
-
-    uv run python scripts/run_factuality_eval.py
-    uv run python scripts/run_factuality_eval.py --eval-json data/eval/factuality_eval_20.json
-    uv run python scripts/run_factuality_eval.py --reports-json path.json --limit 2
-    uv run python scripts/run_factuality_eval.py --target-mean-supported 0.8 --strict-exit
 """
 
 from __future__ import annotations

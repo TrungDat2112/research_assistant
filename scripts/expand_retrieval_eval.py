@@ -1,15 +1,5 @@
 """Build or verify data/eval/retrieval_eval_100.json from the corpus and base eval set.
 
-Usage::
-
-    # Write full 100-query eval (70 EN + 30 VI) with qrels from ingest_manifest
-    uv run python scripts/expand_retrieval_eval.py --write
-
-    # Emit per-source skeleton rows (TBD query text) for manual curation
-    uv run python scripts/expand_retrieval_eval.py --skeleton
-
-All ``relevant_source_ids`` must match ``source_id`` in data/eval/ingest_manifest.json
-after the latest ``ingest_seed_corpus.py`` run.
 """
 
 from __future__ import annotations

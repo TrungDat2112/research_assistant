@@ -1,16 +1,6 @@
 """End-to-end seed corpus ingestion runner.
 
-Reads ``configs/seed_corpus.yaml``, fetches every document, chunks with the
-configured tokenizer, embeds locally, and upserts into Chroma. Writes a
-manifest JSON to ``data/eval/ingest_manifest.json`` so downstream retrieval
-tests / dashboards can audit what made it into the index.
 
-Usage (from repo root):
-
-.. code-block:: powershell
-
-    uv run python scripts/ingest_seed_corpus.py
-    uv run python scripts/ingest_seed_corpus.py --rebuild --limit 5
 """
 
 from __future__ import annotations

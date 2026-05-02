@@ -1,14 +1,6 @@
 """Run hybrid retrieval metrics on data/eval/retrieval_eval_100.json (or --eval-file).
 
-Requires an ingested Chroma store (``scripts/ingest_seed_corpus.py``).
 
-Usage::
-
-    uv run python scripts/run_retrieval_eval.py
-    uv run python scripts/run_retrieval_eval.py --eval-file data/eval/retrieval_eval_30.json
-    uv run python scripts/run_retrieval_eval.py --with-rerank --candidate-pool 50
-    uv run python scripts/run_retrieval_eval.py --with-hyde
-    uv run python scripts/run_retrieval_eval.py --out data/eval/retrieval_eval_results.json
 """
 
 from __future__ import annotations

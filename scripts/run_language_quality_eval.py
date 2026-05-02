@@ -1,16 +1,5 @@
 """VI/EN language quality eval: 5 Vietnamese + 5 English research queries.
 
-Runs the full research graph per query (unless ``--reports-json``), then a
-Sonnet structured judge scores **accuracy**, **fluency**, **terminology**, and
-**citation** (1-5 each). Writes ``data/eval/language_quality.json`` by default
-for baseline tracking.
-
-Usage::
-
-    uv run python scripts/run_language_quality_eval.py
-    uv run python scripts/run_language_quality_eval.py --reports-json path.json
-    uv run python scripts/run_language_quality_eval.py --compare-previous data/eval/language_quality_prev.json
-    uv run python scripts/run_language_quality_eval.py --limit 2 --no-rerank
 """
 
 from __future__ import annotations
