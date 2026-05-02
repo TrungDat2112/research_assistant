@@ -1,12 +1,5 @@
 """Streamlit UI for the Research Assistant Agent (minimal dev UI).
 
-Run with::
-
-    uv run streamlit run ui/app.py
-
-Exposes a single-page UI: user types a research question, clicks "Run",
-watches the trace stream in real time, and reads the rendered Markdown
-report. Not production-grade — meant for dev-loop visibility per PLAN.md.
 """
 
 from __future__ import annotations
@@ -37,7 +30,7 @@ st.set_page_config(
 )
 
 st.title("Research Assistant Agent")
-st.caption("Tuần 1 skeleton — planner + web_search + synthesizer + reporter.")
+st.caption("skeleton — planner + web_search + synthesizer + reporter.")
 
 settings = get_settings()
 
@@ -103,9 +96,6 @@ if run_btn:
     events_seen: set[str] = set()
     final_state: ResearchState | None = None
 
-    # Manually open an agent-span so every node/tool/LLM observation
-    # nests under one Langfuse trace (we can't use @observe here because
-    # the stream() generator is consumed inside this handler).
     try:
         with start_agent_span(
             "research_agent",
