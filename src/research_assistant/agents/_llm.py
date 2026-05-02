@@ -1,15 +1,3 @@
-"""Shared LLM utilities for agent nodes.
-
-Centralises: model instantiation (Anthropic via ``langchain-anthropic``),
-token-usage extraction, USD cost estimation, and the per-query hard cap
-from ADR-011. Kept internal (leading underscore) — only ``agents.*``
-modules should import it.
-
-Pricing table is a conservative snapshot; the source of truth remains
-``https://www.anthropic.com/pricing``. When a new model is introduced,
-add its rate here and default agents to it via ``config.py``.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -30,10 +18,8 @@ logger = logging.getLogger(__name__)
 _EPHEMERAL_CACHE_CONTROL: dict[str, str] = {"type": "ephemeral"}
 
 
-# (input_usd_per_mtok, output_usd_per_mtok)
 _PRICING_USD_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-5": (3.00, 15.00),
-    # Haiku 4.5 pricing is a conservative estimate; update when confirmed.
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-3-5-haiku-latest": (0.80, 4.00),
     "claude-3-5-haiku-20241022": (0.80, 4.00),
@@ -47,8 +33,6 @@ class BudgetExceededError(RuntimeError):
 
 @dataclass(frozen=True)
 class LLMCallResult:
-    """Outcome of a single LLM invocation."""
-
     text: str
     tokens_in: int
     tokens_out: int
@@ -69,17 +53,11 @@ def _pricing_for(model: str) -> tuple[float, float]:
 
 
 def estimate_cost_usd(model: str, tokens_in: int, tokens_out: int) -> float:
-    """Return USD cost for a call. Accepts zero-token cases gracefully."""
     price_in, price_out = _pricing_for(model)
     return (tokens_in / 1_000_000) * price_in + (tokens_out / 1_000_000) * price_out
 
 
 def _extract_usage(message: BaseMessage) -> tuple[int, int]:
-    """Pull ``(input_tokens, output_tokens)`` from a LangChain ``AIMessage``.
-
-    LangChain standardises ``usage_metadata`` across providers (>=0.3); we
-    fall back to ``response_metadata`` if a provider bypasses it.
-    """
     if isinstance(message, AIMessage):
         usage = message.usage_metadata
         if usage is not None:
@@ -100,7 +78,6 @@ def build_chat_model(
     max_tokens: int = 2048,
     timeout_seconds: float = 60.0,
 ) -> ChatAnthropic:
-    """Construct a ``ChatAnthropic`` client with credentials from settings."""
     settings = get_settings()
     if not settings.anthropic_api_key.get_secret_value():
         raise RuntimeError(
@@ -124,13 +101,6 @@ def _preflight_budget_check(
     current_cost_usd: float,
     per_query_cap_usd: float | None,
 ) -> None:
-    """Raise :class:`BudgetExceededError` before contacting the provider
-    when the projected worst-case spend would breach the per-query cap.
-
-    Approximation is deliberately conservative (uses ``max_tokens`` for
-    the output side and a coarse char→token ratio for input) so the cap
-    is never silently overshot.
-    """
     cap = per_query_cap_usd if per_query_cap_usd is not None else get_settings().per_query_cap_usd
     projected_worst = current_cost_usd + estimate_cost_usd(
         model,
@@ -146,7 +116,6 @@ def _preflight_budget_check(
 
 
 def _normalise_text(content: Any) -> str:
-    """Flatten LangChain content (str or list-of-blocks) into plain text."""
     if isinstance(content, list):
         parts = [
             str(block.get("text", "")) if isinstance(block, dict) else str(block)
@@ -169,12 +138,7 @@ def build_lc_messages(
     cacheable_user_prefix: str | None = None,
     use_prompt_cache: bool | None = None,
 ) -> list[BaseMessage]:
-    """Build LangChain messages for Anthropic, optional ephemeral cache breakpoints.
 
-    Caches the **system** block and an optional **user** prefix (same research
-    query repeated on every Critic call). Variable evidence + sub-question tail
-    stays in the second user text block so it is not read from cache.
-    """
     use_cache = _use_prompt_cache(use_prompt_cache)
     out: list[BaseMessage] = []
     if system:
@@ -220,7 +184,6 @@ def _budget_prompt_chars(
     user_text: str,
     cacheable_user_prefix: str | None,
 ) -> str:
-    """Concatenate prompt parts for conservative preflight token estimation."""
     parts = [p for p in (system, cacheable_user_prefix, user_text) if p]
     return "\n\n".join(parts)
 
@@ -238,16 +201,7 @@ def invoke_llm(
     current_cost_usd: float = 0.0,
     per_query_cap_usd: float | None = None,
 ) -> LLMCallResult:
-    """Invoke the chat model and return a cost-annotated result.
 
-    Enforces the per-query budget cap **before** the call (see
-    :func:`_preflight_budget_check`), per ADR-011.
-
-    Emits a Langfuse ``generation`` span with model + usage + cost so
-    Langfuse native charts pick it up. Prompt text is attached manually
-    instead of via ``capture_input=True`` to keep secrets/system prompts
-    out of default captures if callers pre-redact them.
-    """
     budget_text = _budget_prompt_chars(
         system=system,
         user_text=prompt,
@@ -315,16 +269,7 @@ def invoke_structured_llm(
     current_cost_usd: float = 0.0,
     per_query_cap_usd: float | None = None,
 ) -> tuple[_SchemaT, LLMCallResult]:
-    """Invoke the chat model with a strict Pydantic schema and return
-    ``(parsed_instance, cost_result)``.
 
-    Uses ``ChatAnthropic.with_structured_output(schema, include_raw=True)``
-    so Anthropic's native tool-use machinery guarantees a shape-valid
-    JSON response — replacing the fragile "ask for JSON and hope" path
-    used pre-fix. ``include_raw=True`` returns a dict with ``raw``,
-    ``parsed`` and ``parsing_error`` keys so we can still recover token
-    usage (which lives on the raw ``AIMessage``) after parsing.
-    """
     budget_text = _budget_prompt_chars(
         system=system,
         user_text=prompt,

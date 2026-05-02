@@ -1,5 +1,3 @@
-"""LangGraph node: compare evidence across sources before the Critic (ADR-028)."""
-
 from __future__ import annotations
 
 import time
@@ -13,7 +11,6 @@ from research_assistant.tools.compare_sources import CompareSourcesSetting, buil
 
 @observe(name="compare_sources", as_type="span", capture_input=False, capture_output=False)
 def compare_sources_node(state: ResearchState) -> dict[str, Any]:
-    """Run cross-source comparison for the current sub-question draft."""
     started = time.perf_counter()
     plan = state.get("plan", [])
     idx = state.get("current_sub_question_index", 0)

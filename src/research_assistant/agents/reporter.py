@@ -1,17 +1,3 @@
-"""Reporter agent — assembles the final Markdown report.
-
-Deterministic (no LLM call) by design — per ADR-005 the Synthesizer is the
-only component allowed to generate prose, so the Reporter's job is purely:
-
-  1. Renumber per-sub-question ``[^N]`` citation markers into a single
-     globally consistent ``[^K]`` sequence across the whole report.
-  2. Render :mod:`prompts.reporter_v1.jinja` with plan, drafts, evidence,
-     critiques-derived ``conflicts_noted`` (medium/high), and metadata.
-
-Keeping this deterministic means zero hallucination risk at the final step
-and zero token cost — the Reporter is free to run in CI / regression tests.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -40,7 +26,6 @@ def _conflicts_noted_rows(
     plan: list[SubQuestion],
     critiques: dict[str, Critique],
 ) -> list[dict[str, str]]:
-    """Flatten medium/high conflicts for the final report (Tuần 4 reporter)."""
     rows: list[dict[str, str]] = []
     for sq in plan:
         cr = critiques.get(sq.id)
@@ -67,12 +52,7 @@ def _renumber_draft_content(
     evidence_for_q: list[Evidence],
     global_offset: int,
 ) -> str:
-    """Rewrite ``[^N]`` markers in ``draft.content`` to their global index.
 
-    ``N`` is the 1-based position of an evidence within ``evidence_for_q``;
-    the global marker becomes ``N + global_offset``. Out-of-range markers
-    are left intact (so their presence is visible for debugging) but logged.
-    """
 
     def _sub(match: re.Match[str]) -> str:
         n = int(match.group(1))
@@ -101,19 +81,9 @@ def build_report(
     trace_url: str | None = None,
     critiques: dict[str, Critique] | None = None,
 ) -> str:
-    """Pure-function variant — used by tests and the graph node alike.
 
-    Produces a Markdown string. Safe to call with a partial ``drafts`` dict
-    (sub-questions with no draft are rendered as a "no answer" placeholder).
-
-    When ``trace_url`` is provided (Langfuse enabled), the reporter footer
-    includes a link back to the full trace for quick debugging.
-    """
     generated_at = generated_at or datetime.now(tz=UTC)
 
-    # Renumber citations globally. Order follows ``plan`` so the References
-    # list and inline markers agree. We materialise *new* Draft objects so
-    # the original state is not mutated.
     offset = 0
     renumbered_drafts: dict[str, Draft] = {}
     for sq in plan:
@@ -143,7 +113,6 @@ def build_report(
 
 @observe(name="reporter", as_type="span", capture_input=False, capture_output=False)
 def reporter_node(state: ResearchState) -> dict[str, Any]:
-    """LangGraph terminal node — writes ``final_report`` into state."""
     started = time.perf_counter()
     plan = list(state.get("plan", []))
     idx = int(state.get("current_sub_question_index", 0))

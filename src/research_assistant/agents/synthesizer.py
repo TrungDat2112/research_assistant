@@ -1,12 +1,3 @@
-"""Synthesizer agent — writes the answer for a single sub-question.
-
-Uses Claude Haiku (cheap, fast) and enforces citation discipline:
-  * Evidence is numbered ``[1], [2], ...`` in the prompt.
-  * The LLM is instructed to emit ``[^N]`` markers matching those numbers.
-  * We parse the markers out and rebuild them into :class:`Citation`
-    objects so the Reporter (and eventual Critic) can verify coverage.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -33,12 +24,7 @@ _CITATION_MARKER_RE = re.compile(r"\[\^(\d+)\]")
 
 
 def _extract_citations(content: str, evidence: list[Evidence]) -> list[Citation]:
-    """Map ``[^N]`` markers in ``content`` back to evidence ref labels.
 
-    Markers are 1-indexed to match the prompt numbering. Out-of-range
-    markers are dropped with a warning — the Critic may penalise
-    drafts that leave them unresolved.
-    """
     seen: set[int] = set()
     citations: list[Citation] = []
     for match in _CITATION_MARKER_RE.finditer(content):
@@ -67,10 +53,7 @@ def synthesize_one(
     current_cost_usd: float = 0.0,
     per_query_cap_usd: float | None = None,
 ) -> Draft:
-    """Generate a single :class:`Draft` for ``sub_question``.
 
-    Public so the graph node and tests can both call it directly.
-    """
     settings = get_settings()
     model = settings.anthropic_synthesizer_model
 
@@ -98,7 +81,6 @@ def synthesize_one(
 
     citations = _extract_citations(result.text, evidence)
 
-    # Mark cited evidence as "used" so downstream nodes can detect orphans.
     cited_labels = {c.ref_label for c in citations}
     for ev in evidence:
         if ev.ref_label in cited_labels:
@@ -117,12 +99,7 @@ def synthesize_one(
 
 @observe(name="synthesizer", as_type="span", capture_input=False, capture_output=False)
 def synthesizer_node(state: ResearchState) -> dict[str, Any]:
-    """LangGraph node: synthesize the sub-question at ``current_sub_question_index``.
 
-    Reads the plan and evidence from ``state``; writes the resulting
-    :class:`Draft` into ``drafts`` keyed by ``sub_question_id`` and advances
-    the loop index. Designed to be called in a loop by the graph.
-    """
     started = time.perf_counter()
     plan = state.get("plan", [])
     idx = state.get("current_sub_question_index", 0)

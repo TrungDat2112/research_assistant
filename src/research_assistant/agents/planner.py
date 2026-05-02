@@ -1,19 +1,3 @@
-"""Planner agent — decomposes a research query into sub-questions.
-
-Strategy (post-structured-output fix):
-
-1. Ask Claude Sonnet 4.5 via ``ChatAnthropic.with_structured_output`` using
-   a lightweight :class:`_PlanDraft` schema. Anthropic's native tool-use
-   path emits shape-valid JSON, so we no longer need regex + ``json.loads``
-   + repair prompts. If Anthropic still somehow returns ``parsing_error``,
-   the exception bubbles up and we fall back to a single-sub-question plan.
-2. Post-process drafts into strict :class:`SubQuestion` objects (min-length
-   constraints live there, not on the draft schema — giving the LLM room
-   to self-correct without violating Pydantic).
-3. Renumber ids to ``sq_1..sq_N`` and rewrite ``dependency_ids`` so the
-   Synthesizer / Reporter downstream can rely on stable identifiers.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -38,13 +22,6 @@ logger = logging.getLogger(__name__)
 
 
 class _PlanItemDraft(BaseModel):
-    """Loose draft emitted by Claude's tool-use.
-
-    Intentionally has NO ``min_length`` on ``question`` — we validate the
-    stricter contract (see :class:`SubQuestion`) in Python so a borderline
-    draft is caught as a Python error rather than a silent LLM retry loop.
-    """
-
     question: str = Field(
         ...,
         description="Concrete, self-contained sub-question in the output language.",
@@ -58,7 +35,7 @@ class _PlanItemDraft(BaseModel):
         description=(
             "1-3 advisory tool ids: vector_search, web_search, academic_search. "
             "Invalid names are dropped at validation. Execution order always "
-            "follows the rule-based router when it disagrees (ADR-027)."
+            "follows the rule-based router when it disagrees."
         ),
     )
     dependency_ids: list[str] = Field(
@@ -70,7 +47,6 @@ class _PlanItemDraft(BaseModel):
 
 
 class _PlanDraft(BaseModel):
-    """Top-level structured-output container returned by the Planner LLM."""
 
     sub_questions: list[_PlanItemDraft] = Field(
         ...,
@@ -83,11 +59,6 @@ class PlannerError(RuntimeError):
 
 
 def _drafts_to_plan(drafts: list[_PlanItemDraft]) -> list[SubQuestion]:
-    """Convert loose drafts → validated ``SubQuestion`` list with stable ids.
-
-    Also drops any ``dependency_ids`` that reference unknown items (LLM
-    occasionally hallucinates cross-references).
-    """
     if not drafts:
         raise PlannerError("Planner returned empty sub_questions list.")
 
@@ -107,8 +78,7 @@ def _drafts_to_plan(drafts: list[_PlanItemDraft]) -> list[SubQuestion]:
         except ValidationError as exc:
             raise PlannerError(f"Plan item {idx} failed validation: {exc}") from exc
         id_remap[new_id] = new_id
-        # Also map the LLM-proposed dep ids (e.g. "q1", "sq1") best-effort:
-        # anything that looks like an index maps onto the staged id.
+
         staged.append(sq)
 
     final_plan = [
@@ -129,11 +99,6 @@ def _drafts_to_plan(drafts: list[_PlanItemDraft]) -> list[SubQuestion]:
 
 
 def _fallback_plan(query: str) -> list[SubQuestion]:
-    """Single-sub-question plan used when the Planner fails.
-
-    Ensures the graph can still produce *some* answer instead of erroring
-    out — graceful degradation per PLAN.md §11 (infinite-loop risk).
-    """
     return [
         SubQuestion(
             id="sq_1",
@@ -147,16 +112,6 @@ def _fallback_plan(query: str) -> list[SubQuestion]:
 
 @observe(name="planner", as_type="span", capture_input=False, capture_output=False)
 def planner_node(state: ResearchState) -> dict[str, Any]:
-    """LangGraph node entry point.
-
-    Returns a partial state update (``plan`` + ``trace`` + ``total_cost_usd``).
-    Uses the reducer-friendly shape so append semantics work for ``plan``
-    and ``trace`` (see ``ResearchState`` annotations).
-
-    First node to run, so it captures the Langfuse ``trace_id`` / URL and
-    threads them through the state for the reporter to link into the
-    final Markdown footer.
-    """
     started = time.perf_counter()
     settings = get_settings()
     model = settings.anthropic_planner_model
@@ -191,8 +146,6 @@ def planner_node(state: ResearchState) -> dict[str, Any]:
         plan = _fallback_plan(query)
         status = "error"
         details = {"error": str(exc)}
-        # No token usage available on the structured path when it explodes;
-        # cost stays at whatever the previous total was.
         cost_delta = 0.0
         result = cast(LLMCallResult, None)  # for type narrowing below
 
@@ -221,11 +174,6 @@ def planner_node(state: ResearchState) -> dict[str, Any]:
     }
     if cost_delta:
         update["total_cost_usd"] = current_cost + cost_delta
-
-    # Trace id/url are captured at the ``run_research`` layer (outside
-    # the LangGraph runner) so they land in the initial state regardless
-    # of OTel context propagation. We only fill them here as a best-
-    # effort fallback in case some caller bypassed ``run_research``.
     if not state.get("trace_id"):
         trace_id = current_trace_id()
         if trace_id:

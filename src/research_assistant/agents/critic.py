@@ -1,16 +1,3 @@
-"""Critic agent - four-axis rubric before advancing (ADR-005, ADR-030).
-
-Combines:
-  * **Citation coverage** - deterministic paragraph ``[^N]`` share (>= configured).
-  * **Faithfulness** - LLM 1-5; claims grounded in evidence.
-  * **Completeness** - LLM 1-5; sub-question fully addressed.
-  * **Consistency** - deterministic score from :class:`~research_assistant.graph.state.ConflictReport`.
-
-Routes the LangGraph: retry retrieval + synthesis when the critique fails and
-attempt budget remains; otherwise force-pass with explicit conflict notes when
-sources disagree.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -38,7 +25,6 @@ _CITATION_MARKER_RE = re.compile(r"\[\^\d+\]")
 
 
 def _is_insufficient_fallback(text: str) -> bool:
-    """True when the Synthesizer used the explicit no-evidence template."""
     t = text.lower()
     return (
         "insufficient evidence" in t
@@ -53,18 +39,7 @@ def paragraph_citation_stats(
     skip_paragraph: Callable[[str], bool] | None = None,
     apply_full_body_insufficient_guard: bool = True,
 ) -> tuple[float, int, int]:
-    """Share of substantive paragraphs with ``[^N]`` plus counts.
 
-    Returns ``(1.0, 0, 0)`` for empty text, explicit insufficient-evidence
-    bodies, or when no substantive paragraphs remain after filtering.
-
-    ``skip_paragraph`` may exclude paragraphs (e.g. Markdown headings) from
-    both numerator and denominator.
-
-    When ``apply_full_body_insufficient_guard`` is False, the draft is never
-    short-circuited as insufficient-only (used for stitched multi-section
-    reports where some sections disclaim lack of evidence).
-    """
     raw = text.strip()
     if not raw:
         return (1.0, 0, 0)
@@ -92,20 +67,12 @@ def paragraph_citation_stats(
 
 
 def paragraph_citation_coverage(text: str) -> float:
-    """Share of substantive paragraphs that contain at least one ``[^N]`` marker.
 
-    Returns ``1.0`` for empty text, explicit insufficient-evidence bodies, or
-    when no substantive paragraphs are detected (short answers).
-    """
     return paragraph_citation_stats(text)[0]
 
 
 def consistency_score_from_conflicts(items: Sequence[ConflictItem]) -> int:
-    """Map pre-critic conflict severities to a 1-5 consistency rubric.
-
-    **Use when** grading cross-source agreement before shipping the draft.
-    Empty list → 5 (no known disagreements). Highest severity dominates.
-    """
+    
     if not items:
         return 5
     has_high = any(x.severity == "high" for x in items)
@@ -122,8 +89,6 @@ def _axis_meets_bar(score: int, minimum: float) -> bool:
 
 
 class _CritiqueDraft(BaseModel):
-    """Structured output from the Critic LLM (faithfulness + completeness + gate)."""
-
     addresses_sub_question: bool = Field(
         ...,
         description="True if the draft fully addresses the sub-question scope.",
@@ -165,7 +130,6 @@ def _merge_pass(
     min_completeness: float,
     min_consistency: float,
 ) -> tuple[bool, list[str]]:
-    """Combine citation, LLM axes, and deterministic consistency."""
     reasons: list[str] = []
     cov_ok = det_cov + 1e-9 >= citation_threshold
     if not cov_ok:
@@ -204,7 +168,6 @@ def _merge_pass(
 
 
 def _forced_pass_conflict_block(conflicts: Sequence[ConflictItem]) -> list[str]:
-    """Append human-visible notes when advancing despite unresolved source tension."""
     if not conflicts:
         return []
     lines = [
@@ -217,14 +180,12 @@ def _forced_pass_conflict_block(conflicts: Sequence[ConflictItem]) -> list[str]:
 
 
 def _conflicts_for_subq(state: ResearchState, sub_q_id: str) -> list[ConflictItem]:
-    """Copy pre-critic cross-source conflicts into the critique payload."""
     rep = state.get("conflict_reports", {}).get(sub_q_id)
     return list(rep.items) if rep else []
 
 
 @observe(name="critic", as_type="span", capture_input=False, capture_output=False)
 def critic_node(state: ResearchState) -> dict[str, Any]:
-    """LangGraph node: critique the draft for ``current_sub_question_index``."""
     started = time.perf_counter()
     plan = state.get("plan", [])
     idx = state.get("current_sub_question_index", 0)
@@ -510,7 +471,6 @@ def critic_node(state: ResearchState) -> dict[str, Any]:
 
 
 def critic_route_edge(state: ResearchState) -> Literal["retriever", "tick"]:
-    """Conditional edge target after the Critic node."""
     nxt = state.get("critic_route_next", "tick")
     if nxt == "retriever":
         return "retriever"
