@@ -1,15 +1,3 @@
-"""arXiv paper ingestion: metadata via the ``arxiv`` SDK, text via pymupdf.
-
-Two entry points:
-  * :func:`search_arxiv` — given a query + date filter, return paper stubs.
-  * :func:`fetch_arxiv_doc` — given an arXiv id, download + extract to
-    :class:`SourceDoc`.
-
-PDFs are cached under ``<raw_docs_dir>/arxiv/<id>.pdf`` so re-runs skip
-the download. ``pymupdf`` handles text extraction (fast, good enough for
-typical arXiv formatting; accepts lots of weird fonts).
-"""
-
 from __future__ import annotations
 
 import logging
@@ -30,12 +18,7 @@ def search_arxiv(
     date_from: date | None = None,
     categories: list[str] | None = None,
 ) -> list[dict[str, object]]:
-    """Return lightweight metadata dicts for ``query`` results.
 
-    Full-text fetch is deferred to :func:`fetch_arxiv_doc` to avoid
-    downloading PDFs we might filter out. Filters: ``date_from`` (inclusive
-    on ``published``), ``categories`` (prefix match on primary category).
-    """
     import arxiv
 
     if categories:
@@ -68,7 +51,6 @@ def search_arxiv(
 
 
 def _iter_results(client: Any, search: Any) -> Iterator[Any]:
-    """Indirection so tests can monkeypatch the network call."""
     return iter(client.results(search))
 
 
@@ -78,7 +60,6 @@ def fetch_arxiv_doc(
     cache_dir: Path,
     max_chars: int = 400_000,
 ) -> SourceDoc:
-    """Download (cached) + extract text for a single arXiv paper."""
     import arxiv
 
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -108,7 +89,6 @@ def fetch_arxiv_doc(
 
 
 def _extract_pdf_text(path: Path, *, max_chars: int) -> str:
-    """Pull text from ``path`` with pymupdf, truncating at ``max_chars``."""
     import pymupdf
 
     chunks: list[str] = []

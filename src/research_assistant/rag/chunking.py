@@ -1,20 +1,3 @@
-"""Token-aware chunker with contextual prepend.
-
-PLAN §5.1 / ADR-003: chunks are ~500 tokens with 10% overlap, and every
-chunk is prefixed with a 1-2 sentence doc-level summary so embedding
-captures the right context even for short slices.
-
-Design:
-  * Tokeniser is the embedding model's own tokenizer (HuggingFace fast
-    tokenizer via ``sentence-transformers``). We cache it so we never
-    pay the load cost twice per process.
-  * Slicing happens on token ids (not characters) to stay honest about
-    the 500-token budget, but chunk *text* is decoded back so humans /
-    downstream citation extractors see readable text.
-  * A simple heading detector (``^#+ `` or ``ALL-CAPS SHORT LINE``) labels
-    the active section per chunk — best-effort, not a structural parser.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -36,19 +19,12 @@ _ALLCAPS_RE = re.compile(r"^[A-Z][A-Z0-9 \-:,]{3,80}$")
 
 @lru_cache(maxsize=4)
 def _get_tokenizer(model_id: str) -> PreTrainedTokenizerBase:
-    """Load and cache the HF fast tokenizer for ``model_id``.
 
-    Importing transformers is heavy (~1s on cold cache) — cache ensures
-    the cost is paid exactly once per process per model.
-    """
     from transformers import AutoTokenizer
 
     logger.debug("Loading tokenizer %s", model_id)
     tok = AutoTokenizer.from_pretrained(model_id, use_fast=True)
-    # Chunking only needs token ids + char offsets; it never runs a LM forward
-    # pass on the full document. Many sentence-transformers tokenizers default
-    # ``model_max_length`` to 8k and warn or truncate long PDFs — override so
-    # slicing stays faithful to the full ``doc.text``.
+
     tok.model_max_length = 1_000_000
     return tok
 
@@ -59,11 +35,7 @@ def _get_tokenizer(model_id: str) -> PreTrainedTokenizerBase:
 
 
 def _iter_sections(text: str) -> list[tuple[int, str]]:
-    """Return ``(char_offset, section_name)`` pairs for detected headings.
 
-    Only the *start* of each section is recorded; callers compute the
-    active section for an arbitrary offset by scanning the list.
-    """
     sections: list[tuple[int, str]] = [(0, "")]
     offset = 0
     for line in text.splitlines(keepends=True):
@@ -94,12 +66,7 @@ _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
 def _summarise_for_prepend(doc: SourceDoc, max_chars: int = 400) -> str:
-    """Cheap 1-2 sentence prepend. LLM-based summaries come later.
 
-    Order: use ``doc.summary`` if provided; otherwise take the first 1-2
-    sentences of the body; fall back to the title alone. Hard-cap by
-    characters so we never blow the token budget.
-    """
     if doc.summary:
         base = doc.summary.strip()
     else:
@@ -125,12 +92,7 @@ class ChunkingConfig:
 
 
 def chunk_document(doc: SourceDoc, config: ChunkingConfig) -> list[Chunk]:
-    """Slice ``doc`` into overlapping token-sized chunks with prepend.
 
-    Empty / whitespace-only docs produce an empty list and a warning —
-    the caller should surface that as a loader failure rather than index
-    the placeholder.
-    """
     if not doc.text.strip():
         logger.warning("Empty text for source_id=%s — skipping", doc.source_id)
         return []
@@ -195,7 +157,6 @@ def chunk_document(doc: SourceDoc, config: ChunkingConfig) -> list[Chunk]:
 
 
 def chunk_documents(docs: list[SourceDoc], config: ChunkingConfig) -> list[Chunk]:
-    """Convenience wrapper: chunk many docs, preserving order."""
     out: list[Chunk] = []
     for d in docs:
         out.extend(chunk_document(d, config))

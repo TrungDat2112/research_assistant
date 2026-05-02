@@ -1,24 +1,3 @@
-"""YAML-driven orchestrator for seed-corpus ingestion.
-
-The config file (``configs/seed_corpus.yaml``) declares:
-
-.. code-block:: yaml
-
-    arxiv:
-      ids: [...]                   # explicit arxiv ids (preferred for reproducibility)
-      queries:                     # each generates ``max_results`` stubs
-        - query: "retrieval augmented generation"
-          max_results: 5
-          date_from: "2024-01-01"
-          categories: ["cs.CL", "cs.AI"]
-    html:
-      - url: "https://..."
-        title: "optional hint"
-
-Everything unknown is ignored with a warning so we can evolve the schema
-without breaking old configs.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -103,11 +82,7 @@ def load_seed_corpus(
     *,
     arxiv_cache_dir: Path,
 ) -> IngestResult:
-    """Fetch every declared source, returning the materialised docs + failures.
 
-    Dedup: the same arxiv id appearing in ``arxiv_ids`` and returned by a
-    query isn't downloaded twice; we skip the duplicate.
-    """
     docs: list[SourceDoc] = []
     failures: list[tuple[str, str]] = []
     seen: set[str] = set()

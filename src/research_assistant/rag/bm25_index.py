@@ -1,9 +1,3 @@
-"""Lexical index over chunk bodies using Okapi BM25 (``rank_bm25`` / PLAN.md §3).
-
-Built from the same text Chroma stores in ``documents`` so hybrid retrieval can
-run BM25 in parallel with dense HNSW search without a second storage engine.
-"""
-
 from __future__ import annotations
 
 import re
@@ -19,14 +13,11 @@ _TOKEN_RE = re.compile(r"[\w']+", flags=re.UNICODE)
 
 
 def tokenize_for_bm25(text: str) -> list[str]:
-    """Lowercase word tokens — fast path for English arXiv / blog chunks."""
     return [t for t in _TOKEN_RE.findall(text.lower()) if t]
 
 
 @dataclass(frozen=True)
 class BM25CorpusIndex:
-    """Holds a BM25Okapi model aligned with ``_chunk_ids`` order."""
-
     _chunk_ids: tuple[str, ...]
     _bm25: Any
 
@@ -46,7 +37,6 @@ class BM25CorpusIndex:
 
     @classmethod
     def from_search_results(cls, rows: list[SearchResult]) -> BM25CorpusIndex:
-        """Build from parallel lists of id + body (used in tests)."""
         if not rows:
             return cls((), _EmptyBM25())
         ids: list[str] = []
@@ -69,7 +59,6 @@ class BM25CorpusIndex:
         query: str,
         n: int,
     ) -> list[tuple[str, float]]:
-        """Return the top-``n`` (chunk_id, raw BM25) pairs for ``query``."""
         if n <= 0 or not self._chunk_ids or isinstance(self._bm25, _EmptyBM25):
             return []
         q = tokenize_for_bm25(query)
@@ -96,7 +85,6 @@ class BM25CorpusIndex:
         query: str,
         chunk_id: str,
     ) -> float | None:
-        """Score one id (O(n_docs)); used for score lookup on a candidate set."""
         if not self._chunk_ids or isinstance(self._bm25, _EmptyBM25):
             return None
         try:
@@ -111,8 +99,6 @@ class BM25CorpusIndex:
 
 
 class _EmptyBM25:
-    """Stub when the collection is empty — mirrors BM25Okapi's lack of type stubs."""
-
     def get_scores(self, _query: list[str]) -> list[float]:
         return []
 

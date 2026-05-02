@@ -1,16 +1,3 @@
-"""Chroma-backed vector store (dev; Qdrant takes over in prod per PLAN §3).
-
-Design:
-  * PersistentClient rooted at ``Settings.chroma_persist_dir`` so state
-    survives restarts without running the Chroma server binary.
-  * We manage embeddings ourselves (``embedding_function=None`` equivalent
-    by always passing ``embeddings=...`` on ``add`` and ``query``). This
-    keeps the store provider-agnostic and avoids Chroma downloading
-    defaults when the embedding model is already loaded.
-  * ``upsert_chunks`` (not ``add``) to make re-runs idempotent — re-indexing
-    the same document won't duplicate rows.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -28,8 +15,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SearchResult:
-    """Single hit from a vector search."""
-
     chunk_id: str
     body: str
     metadata: dict[str, Any]
@@ -37,8 +22,6 @@ class SearchResult:
 
 
 class ChromaStore:
-    """Thin idempotent wrapper over a Chroma PersistentClient collection."""
-
     def __init__(
         self,
         persist_dir: Path,
@@ -71,7 +54,6 @@ class ChromaStore:
     # -- mutation --------------------------------------------------------
 
     def reset(self) -> None:
-        """Drop and recreate the collection — used by ingest --rebuild."""
         try:
             self._client.delete_collection(self.collection_name)
         except Exception as exc:  # chromadb raises on missing; it's fine
@@ -83,7 +65,6 @@ class ChromaStore:
         chunks: list[Chunk],
         embeddings: NDArray[np.float32],
     ) -> None:
-        """Insert-or-update ``chunks`` with pre-computed ``embeddings``."""
         if len(chunks) == 0:
             return
         if len(chunks) != embeddings.shape[0]:
@@ -152,7 +133,6 @@ class ChromaStore:
         *,
         where: dict[str, Any] | None = None,
     ) -> list[SearchResult]:
-        """Load documents by primary key (used to hydrate BM25-only candidates)."""
         if not chunk_ids:
             return []
         raw: dict[str, Any] = self._collection.get(
@@ -181,11 +161,7 @@ class ChromaStore:
         where: dict[str, Any] | None = None,
         limit: int | None = None,
     ) -> list[SearchResult]:
-        """Return every chunk (ids + body + metadata) for BM25 / introspection.
 
-        Chroma may paginate; for collections larger than a few hundred k docs,
-        pass ``limit``/iterate — the seed corpus is small so one call is fine.
-        """
         raw: dict[str, Any] = self._collection.get(
             where=where,
             limit=limit,

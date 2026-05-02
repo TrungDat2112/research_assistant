@@ -1,17 +1,3 @@
-"""Local dense-embedding wrapper around ``sentence-transformers``.
-
-ADR-018: repo default is ``BAAI/bge-m3`` (multilingual). Use
-``BAAI/bge-small-en-v1.5`` via settings when you need a lighter English-only
-dev loop (ADR-013).
-
-Contract:
-  * :func:`embed_documents` — for corpus chunks; normalised cosine vectors.
-  * :func:`embed_query` — single-query variant with the same pooling.
-  * BGE family requires an instruction prefix on queries (``"Represent
-    this sentence for searching relevant passages: "``). We apply it
-    transparently when ``is_query=True``.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -30,12 +16,7 @@ _MODEL_LOCK = threading.Lock()
 
 @lru_cache(maxsize=2)
 def _load_model(model_id: str, device: str) -> Any:
-    """Return a cached ``SentenceTransformer``.
 
-    Guarded with a lock to avoid racing two callers through the heavy
-    first-time download on cold cache. Typed as ``Any`` because the
-    ``sentence_transformers`` package ships no type stubs.
-    """
     from sentence_transformers import SentenceTransformer
 
     with _MODEL_LOCK:
@@ -44,14 +25,11 @@ def _load_model(model_id: str, device: str) -> Any:
 
 
 def _needs_query_prefix(model_id: str) -> bool:
-    """BGE dense models expect a query instruction prefix."""
     lid = model_id.lower()
     return "bge" in lid and "reranker" not in lid
 
 
 class EmbeddingModel:
-    """Thin wrapper so downstream code doesn't import sentence_transformers."""
-
     def __init__(
         self,
         model_id: str = "BAAI/bge-m3",

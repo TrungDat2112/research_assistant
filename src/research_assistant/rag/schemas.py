@@ -1,16 +1,3 @@
-"""Pydantic value objects for the RAG ingestion pipeline.
-
-Sits below chunking / embedding / vector store — everything upstream emits
-these models, everything downstream consumes them. Keep it provider-agnostic
-so arXiv / HTML / future loaders share one contract.
-
-The split is intentional:
-  * :class:`SourceDoc` — a **whole document** post-cleaning (no chunking yet).
-  * :class:`Chunk` — a **slice** of a document ready to embed + index.
-  * :class:`ChunkMetadata` — flat, string-only fields (Chroma's metadata
-    column accepts scalars only, so we serialise lists/dates to strings).
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -23,12 +10,7 @@ DocType = Literal["arxiv", "blog", "html", "pdf", "other"]
 
 
 class SourceDoc(BaseModel):
-    """A single cleaned document ready for chunking.
 
-    ``source_id`` is the stable identifier used everywhere downstream
-    (chunk ids, dedup keys). For arXiv papers it's the arXiv id
-    (``2404.16130v2``); for HTML it's a SHA-1 of the canonical URL.
-    """
 
     source_id: str = Field(..., min_length=3, max_length=256)
     url: str = Field(..., description="Canonical source URL (may be a DOI/arxiv link).")
@@ -54,17 +36,11 @@ class SourceDoc(BaseModel):
         return "h_" + hashlib.sha1(url.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
-# PLAN.md §4.1 — tool return type for ``fetch_url`` / ``fetch_pdf``.
+
 Document: TypeAlias = SourceDoc
 
 
 class ChunkMetadata(BaseModel):
-    """Flat metadata attached to every chunk.
-
-    Must stay serialisable to ``dict[str, str | int | float | bool]`` because
-    Chroma (and most vector DBs) reject nested structures in metadata.
-    """
-
     source_id: str
     source_url: str
     title: str
@@ -91,13 +67,6 @@ class ChunkMetadata(BaseModel):
 
 
 class Chunk(BaseModel):
-    """A piece of text ready to embed + index.
-
-    ``text`` is the *embedding input* — it already includes the contextual
-    prepend (doc summary / title) so retrieval sees the right context even
-    when the slice is short (ADR-003). ``body`` is the raw slice without the
-    prepend, kept for display / citation.
-    """
 
     chunk_id: str = Field(..., pattern=r"^[A-Za-z0-9_\-:.]{3,128}$")
     text: str = Field(..., min_length=1)

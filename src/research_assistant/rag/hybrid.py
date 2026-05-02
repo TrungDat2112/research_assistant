@@ -1,9 +1,3 @@
-"""Stage-1 hybrid retrieval: dense top-50 + BM25 top-50, weighted combine (PLAN §5.2).
-
-Scores are min--max normalised **within each leg** on the retrieved top-k, then:
-``combined = w_dense * norm_dense + w_bm25 * norm_bm25``, with 0 for a missing leg.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -22,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class HybridSearchResult:
-    """One ranked hit after dense + BM25 fusion."""
-
     chunk_id: str
     body: str
     metadata: dict[str, Any]
@@ -44,7 +36,6 @@ def _min_max_norm(scores: dict[str, float]) -> dict[str, float]:
 
 
 def _dense_similarity(distance: float) -> float:
-    """Chroma cosine space: distance is ``1 - cosine_similarity`` on L2-normalised vectors."""
     sim = 1.0 - float(distance)
     if sim < 0.0:
         return 0.0
@@ -66,7 +57,6 @@ def hybrid_search_stage1(
     final_top_k: int = 20,
     where: dict[str, Any] | None = None,
 ) -> list[HybridSearchResult]:
-    """Retrieve with hybrid BM25 + dense fusion, return ranked :class:`HybridSearchResult`."""
     if final_top_k <= 0:
         raise ValueError("final_top_k must be positive")
     if dense_top_k <= 0 or bm25_top_k <= 0:
@@ -135,7 +125,6 @@ def hybrid_search_stage1(
 
 
 def hybrid_result_to_search_hit(r: HybridSearchResult) -> SearchHit:
-    """Map a fused hybrid row to :class:`~research_assistant.graph.state.SearchHit` for re-ranking."""
     from pydantic import HttpUrl, TypeAdapter
 
     meta = r.metadata

@@ -1,11 +1,3 @@
-"""Stage-2 cross-encoder re-ranking (PLAN.md §5.2, ADR-002).
-
-Uses ``BAAI/bge-reranker-v2-m3`` (or another CrossEncoder) to score
-``(query, passage)`` pairs and return the top-k :class:`SearchHit` rows for
-the Synthesizer. Passage text prefers ``raw_content`` (corpus chunk body),
-then ``snippet`` / title.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -27,7 +19,6 @@ _RERANKER_LOCK = threading.Lock()
 
 @lru_cache(maxsize=2)
 def _load_cross_encoder(model_id: str, device: str) -> Any:
-    """Lazy ``CrossEncoder`` with a download lock (same pattern as embeddings)."""
     from sentence_transformers import CrossEncoder
 
     with _RERANKER_LOCK:
@@ -59,12 +50,7 @@ def rerank_search_hits(
     top_k: int = 5,
     cross_encoder: Any | None = None,
 ) -> list[SearchHit]:
-    """Re-order ``hits`` by cross-encoder relevance; keep top ``top_k``.
 
-    Scores in the output are min--max normalised to ``[0, 1]`` over the
-    returned slice. When ``top_k`` exceeds available hits, the list is
-    simply truncated.
-    """
     if not query or not query.strip():
         return hits[:top_k]
     if not hits:
@@ -114,10 +100,7 @@ def rerank_hybrid_results(
     top_k: int = 20,
     cross_encoder: Any | None = None,
 ) -> list[HybridSearchResult]:
-    """Re-rank stage-1 hybrid rows with the cross-encoder; return top ``top_k`` chunks.
 
-    Preserves :class:`HybridSearchResult` so eval can read ``metadata[\"source_id\"]``.
-    """
     if not query or not query.strip():
         return pool[:top_k] if top_k > 0 else []
     if not pool:

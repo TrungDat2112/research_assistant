@@ -1,11 +1,3 @@
-"""HTML/blog ingestion via ``trafilatura``.
-
-We use trafilatura's ``fetch_url`` + ``extract`` (readability-like extraction)
-because it handles most reputable blog sites cleanly — Anthropic, OpenAI,
-LangChain, HuggingFace, Google Research blogs. JS-heavy sites would need
-playwright (see PLAN §3); deferred to Tuần 4+ per ADR-013.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -16,16 +8,11 @@ from research_assistant.rag.schemas import SourceDoc
 
 logger = logging.getLogger(__name__)
 
-# Conservative ceiling to match the arXiv path; very long blogs get truncated.
 _MAX_CHARS = 300_000
 
 
 def fetch_html_doc(url: str, *, title_hint: str | None = None) -> SourceDoc:
-    """Fetch + clean ``url`` into a :class:`SourceDoc`.
 
-    Raises :class:`ValueError` on fetch failure or empty extraction — callers
-    typically want to log-and-skip rather than crash ingestion.
-    """
     import trafilatura
 
     downloaded = trafilatura.fetch_url(url)
@@ -93,7 +80,6 @@ def _parse_date(raw: Any) -> date | None:
             return datetime.strptime(text, fmt).date()
         except ValueError:
             continue
-    # Last resort: pull the first yyyy-mm-dd if the string happens to contain one.
     try:
         return date.fromisoformat(text[:10])
     except ValueError:

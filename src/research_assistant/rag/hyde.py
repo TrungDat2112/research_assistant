@@ -1,10 +1,3 @@
-"""Hypothetical Document Embeddings (HyDE) for stage-1 dense retrieval (PLAN §5.2 optional).
-
-When the hybrid probe (top-2 fused hits) looks weak or ambiguous, we ask a small
-LLM (Haiku by default) for a short hypothetical passage, embed it, and use that
-vector for the **dense** leg; BM25 still uses the original query string.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -37,7 +30,6 @@ def hyde_probe_triggers(
     min_top1_fused_score: float,
     min_fused_margin: float,
 ) -> bool:
-    """True when we should replace the dense embedding with a HyDE vector."""
     if not probe:
         return True
     top1 = float(probe[0].combined_score)
@@ -52,7 +44,6 @@ def generate_hyde_passage(
     *,
     settings: Settings | None = None,
 ) -> tuple[str, float]:
-    """Ask the synthesizer model for a hypothetical passage; returns (text, cost_usd)."""
     from research_assistant.agents._llm import invoke_llm
 
     s = settings or get_settings()
@@ -82,15 +73,7 @@ def dense_embedding_for_retrieval(
     settings: Settings | None = None,
     hypothesis_fn: Callable[[str], tuple[str, float]] | None = None,
 ) -> tuple[NDArray[np.float32], dict[str, Any]]:
-    """Return dense query vector for hybrid search, optionally HyDE-rewritten.
 
-    Parameters
-    ----------
-    hyde_enabled:
-        ``None`` → use :attr:`Settings.hyde_enabled`. ``False`` skips probe and LLM.
-    hypothesis_fn:
-        Tests only: ``(query) -> (passage, cost_usd)`` overriding LLM generation.
-    """
     s = settings or get_settings()
     active = s.hyde_enabled if hyde_enabled is None else hyde_enabled
     meta: dict[str, Any] = {
