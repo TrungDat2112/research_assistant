@@ -1,7 +1,3 @@
-"""Batch citation coverage from smoke Markdown (``smoke_outputs.md``).
-
-"""
-
 from __future__ import annotations
 
 import argparse

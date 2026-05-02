@@ -1,7 +1,3 @@
-"""Build or verify data/eval/retrieval_eval_100.json from the corpus and base eval set.
-
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -15,8 +11,6 @@ _DEFAULT_OUT = _REPO / "data" / "eval" / "retrieval_eval_100.json"
 _EVAL30 = _REPO / "data" / "eval" / "retrieval_eval_30.json"
 _MANIFEST = _REPO / "data" / "eval" / "ingest_manifest.json"
 
-# 40 additional English items (q31-q70). source_ids are validated against current manifest
-# at write time. Mix of single- and multi-relevant qrels.
 _EXTRA_EN: list[dict[str, Any]] = [
     {
         "id": "q31",

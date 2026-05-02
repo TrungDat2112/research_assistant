@@ -1,8 +1,3 @@
-"""Run hybrid retrieval metrics on data/eval/retrieval_eval_100.json (or --eval-file).
-
-
-"""
-
 from __future__ import annotations
 
 import argparse

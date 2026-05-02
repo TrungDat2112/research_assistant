@@ -1,7 +1,3 @@
-"""VI/EN language quality eval: 5 Vietnamese + 5 English research queries.
-
-"""
-
 from __future__ import annotations
 
 import argparse

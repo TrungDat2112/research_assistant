@@ -1,7 +1,3 @@
-"""End-to-end smoke eval across five fixed seed queries (real APIs, costs money).
-
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -43,7 +39,6 @@ def _step_attr(obj: Any, name: str, default: Any = None) -> Any:
 
 
 def _aggregate_retrieval_stats(final: Any) -> dict[str, Any]:
-    """Corpus vs web hit counts from evidence + per-sub-q retriever StepLog details."""
     evidence = final.get("evidence") or {}
     by_source: dict[str, int] = {}
     for _sq, evs in evidence.items():
@@ -82,7 +77,6 @@ def _aggregate_retrieval_stats(final: Any) -> dict[str, Any]:
 
 
 def _router_plan_per_subq(final: Any) -> list[dict[str, Any]]:
-    """Last retriever-step router snapshot per sub-question, in plan order."""
     plan = final.get("plan") or []
     id_order = [sq.id for sq in plan]
     last_by_sq: dict[str, dict[str, Any]] = {}
@@ -114,7 +108,6 @@ def _router_plan_per_subq(final: Any) -> list[dict[str, Any]]:
 
 
 def _n_conflicts(final: Any) -> int:
-    """Total conflict items across sub-questions (compare_sources)."""
     reports = final.get("conflict_reports") or {}
     n = 0
     for rep in reports.values():
@@ -136,7 +129,6 @@ def _run_smoke_pass(
     tool_router_enabled_override: bool | None,
     compare_sources_mode_override: Literal["off", "heuristic", "auto"] | None,
 ) -> tuple[list[str], list[dict[str, Any]], float, float, int]:
-    """Execute all seed queries; return report bodies, metrics rows, totals, hit-cap count."""
     all_reports: list[str] = []
     metrics: list[dict[str, Any]] = []
     total_cost = 0.0
@@ -260,7 +252,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--max-iterations",
         type=int,
         default=None,
-        help="Iteration floor before planner (planner may raise per ADR-019).",
+        help="Iteration floor before planner.",
     )
     p.add_argument(
         "--with-router",

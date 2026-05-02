@@ -1,8 +1,3 @@
-"""Factuality eval: 15 EN + 5 VI queries with atomic gold claims.
-
-
-"""
-
 from __future__ import annotations
 
 import argparse
