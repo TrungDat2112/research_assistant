@@ -1,17 +1,3 @@
-"""Vector + hybrid corpus search — wraps :class:`~research_assistant.rag.vector_store.ChromaStore`.
-
-Contract (LLM-facing, same as :func:`~research_assistant.tools.web_search.web_search`):
-    name:     vector_search
-    category: information_retrieval (PLAN.md §4.1)
-    purpose:  Retrieve chunks from the local ingested corpus using stage-1 hybrid
-              retrieval (dense top-50 + BM25 top-50, 0.5/0.5 by default).
-    when:     For prior art, paper details, or blog explanations likely present
-              in the seed corpus (AI/ML RAG, agents, reasoning, etc.).
-
-Returns :class:`~research_assistant.graph.state.SearchHit` rows with
-``source="corpus"`` so the Synthesizer can treat them like web hits.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -39,7 +25,6 @@ class VectorSearchError(RuntimeError):
 
 
 def clear_vector_search_cache() -> None:
-    """Drop the in-process BM25 cache (call from tests after rebuild/reset)."""
     global _BM25_CACHE
     _BM25_CACHE = None
 
@@ -55,7 +40,6 @@ def _default_embedder() -> EmbeddingModel:
 
 
 def _cached_bm25_index(store: ChromaStore) -> BM25CorpusIndex:
-    """Reuse the BM25 index while the Chroma document count is stable."""
     global _BM25_CACHE
     name = store.collection_name
     n = store.count()
@@ -81,27 +65,7 @@ def vector_search(
     embedder: EmbeddingModel | None = None,
     bm25_index: BM25CorpusIndex | None = None,
 ) -> list[SearchHit]:
-    """Hybrid BM25 + dense search over the Chroma corpus.
-
-    Parameters
-    ----------
-    query:
-        Natural-language query (same embedding model as ingest, ADR-013).
-    top_k:
-        Number of fused hits to return after weighting (default 20).
-    filters:
-        Optional Chroma ``where`` metadata filter passed to the dense leg.
-    weight_dense / weight_bm25:
-        Non-negative weights; they need not sum to 1 — the hybrid module
-        normalises by the sum of the two weights internally.
-    dense_top_k / bm25_top_k:
-        Candidate pool size per leg (PLAN §5.2 stage 1 — default 50/50).
-    store / embedder / bm25_index:
-        Injection points for unit tests. Production callers omit them so a
-        real :class:`~research_assistant.rag.vector_store.ChromaStore` and
-        :class:`~research_assistant.rag.embedding.EmbeddingModel` are built
-        from :class:`~research_assistant.config.Settings`.
-    """
+   
     if not query or not query.strip():
         raise VectorSearchError("Empty query — refusing vector search.")
 

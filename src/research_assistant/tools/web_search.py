@@ -1,18 +1,3 @@
-"""Web search tool — Tavily API wrapper.
-
-Contract (LLM-facing):
-    name:     web_search
-    category: information_retrieval (PLAN.md §4.1)
-    purpose:  Retrieve the most relevant public web snippets for a query.
-    when:     Whenever the agent needs fresh / open-web facts that are
-              unlikely to be already in the corpus.
-
-Return type is always a ``list[SearchHit]``; each web hit sets
-``web_trust_tier`` (``high`` / ``medium`` / ``low``) from hostname heuristics
-for the tool router — call signature is unchanged. The caller decides whether
-to wrap hits as ``Evidence`` for a specific sub-question.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -32,13 +17,9 @@ logger = logging.getLogger(__name__)
 TimeRange = Literal["day", "week", "month", "year"]
 SearchDepth = Literal["basic", "advanced"]
 
-# Tokens that hurt recall when a query is already "year-bound" (e.g. Tavily
-# mis-filters VN-language year phrases). Stripped only for the widened-recall
-# retry — the original query is always tried first.
 _YEAR_PATTERN = re.compile(r"\b(năm\s+)?20\d{2}\b", flags=re.IGNORECASE)
 _IN_YEAR_PATTERN = re.compile(r"\bin\s+20\d{2}\b", flags=re.IGNORECASE)
 
-# Host suffixes for ``web_trust_tier`` (Tuần 4 — noisy job/course pages vs labs).
 _HIGH_TRUST_DOMAIN_SUFFIXES: tuple[str, ...] = (
     "anthropic.com",
     "openai.com",
@@ -86,11 +67,6 @@ _LOW_TRUST_DOMAIN_SUFFIXES: tuple[str, ...] = (
 
 
 class _SearchClient(Protocol):
-    """Minimal protocol implemented by :class:`tavily.TavilyClient`.
-
-    Declared so unit tests can inject a fake without importing Tavily.
-    """
-
     def search(self, query: str, **kwargs: Any) -> dict[str, Any]: ...
 
 
@@ -112,12 +88,7 @@ def _host_matches_suffix(host: str, suffix: str) -> bool:
 
 
 def web_trust_tier_for_url(url: str) -> WebTrustTier:
-    """Heuristic tier for an HTTPS URL's registrable-style host.
-
-    Used by :func:`web_search` on each Tavily hit. The rule-based tool router
-    (B1) can prefer ``high``, cap ``low``, or merge with academic/corpus
-    signals without changing the ``web_search`` call signature.
-    """
+ 
     host, _ = _host_and_path(url)
     if not host:
         return "medium"
@@ -143,11 +114,7 @@ def _build_client() -> TavilyClient:
 
 
 def _coerce_hit(raw: dict[str, Any]) -> SearchHit | None:
-    """Translate a Tavily result dict into a :class:`SearchHit`.
 
-    Returns ``None`` when the result is missing required fields rather than
-    raising, so one bad row does not poison a whole search.
-    """
     try:
         url_str = str(raw["url"])
         return SearchHit(
@@ -176,34 +143,7 @@ def web_search(
     exclude_domains: list[str] | None = None,
     client: _SearchClient | None = None,
 ) -> list[SearchHit]:
-    """Run a web search via Tavily and return a list of :class:`SearchHit`.
-
-    Parameters
-    ----------
-    query:
-        Natural-language search query. Should be self-contained (include
-        entities the retriever needs); do not assume conversational context.
-    max_results:
-        Upper bound on the number of hits returned. Tavily caps this
-        internally; we clamp to ``[1, 20]``.
-    time_range:
-        Recency filter. ``"year"`` is the safe default for rapidly-moving
-        domains like AI/ML.
-    search_depth:
-        ``"basic"`` is cheaper and faster; ``"advanced"`` asks Tavily to
-        perform extra extraction, useful when a sub-question needs more
-        context than a snippet provides.
-    include_domains / exclude_domains:
-        Optional domain allow/block lists (see PLAN.md §7.2).
-    client:
-        Injection point for unit tests. Production callers leave this
-        ``None`` so a real :class:`TavilyClient` is built lazily.
-
-    Raises
-    ------
-    WebSearchError
-        If the API key is missing or the upstream call fails.
-    """
+    
     if not query or not query.strip():
         raise WebSearchError("Empty query — refusing to call Tavily.")
 
@@ -267,11 +207,7 @@ def web_search(
 
 
 def _simplify_query(query: str) -> str:
-    """Strip overly-specific year tokens to widen recall on a retry.
 
-    Kept small and deterministic — this is a safety net, not a rewriter.
-    If nothing changes, the caller falls through to the original query.
-    """
     simplified = _IN_YEAR_PATTERN.sub("", query)
     simplified = _YEAR_PATTERN.sub("", simplified)
     return " ".join(simplified.split())
@@ -292,25 +228,7 @@ def web_search_with_fallback(
     exclude_domains: list[str] | None = None,
     client: _SearchClient | None = None,
 ) -> list[SearchHit]:
-    """Run :func:`web_search` with up to two progressive retries on empty hits.
 
-    Retry ladder:
-
-    1. ``search_depth="basic"`` with the original query — cheap, covers the
-       vast majority of cases (this is what production used before the fix).
-    2. If stage 1 returns zero hits: ``search_depth="advanced"`` on the
-       same query. Tavily then performs extra extraction and usually
-       recovers niche sub-questions (e.g. vector-DB benchmark pages).
-    3. If stage 2 still returns zero hits AND the query contains a specific
-       year token: strip the year and retry at ``advanced`` depth. Keeps
-       answers reasonably fresh via ``time_range`` but widens recall for
-       questions whose wording is too tight.
-
-    Any :class:`WebSearchError` from the underlying call is propagated —
-    the graph's retriever node handles them as "0 hits, ok to continue".
-    Injected ``client`` is reused across all stages so unit tests can
-    assert the retry ladder precisely.
-    """
     stage_used = "basic"
     hits = web_search(
         query,

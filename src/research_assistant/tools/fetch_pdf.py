@@ -1,21 +1,3 @@
-"""Fetch PDF from an arXiv id or a direct ``.pdf`` URL, cache, extract text.
-
-Contract (LLM-facing):
-    name:     fetch_pdf
-    category: information_retrieval (PLAN.md §4.1)
-    purpose:  Download a PDF (arXiv or public HTTPS URL ending in ``.pdf``),
-              cache it on disk, and return extracted plain text as a
-              :class:`~research_assistant.rag.schemas.Document` (alias of
-              :class:`~research_assistant.rag.schemas.SourceDoc`).
-    when:     After :func:`research_assistant.tools.academic_search.academic_search`
-              or when the user supplies a PDF link; use when full paper text
-              is needed beyond title/abstract.
-
-Inputs must be either a bare arXiv id, an ``arxiv.org/abs/...`` or
-``arxiv.org/pdf/...`` link, or an ``http(s)`` URL whose path ends with
-``.pdf``. Caps: 25 MiB download, 400k extracted characters, 30s HTTP timeout.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -171,33 +153,7 @@ def fetch_pdf(
     max_chars: int = MAX_EXTRACT_CHARS,
     timeout_s: float = HTTP_TIMEOUT_S,
 ) -> Document:
-    """Download (or load from cache), extract text, return a :class:`Document`.
-
-    Parameters
-    ----------
-    arxiv_id_or_pdf_url:
-        Bare arXiv id (``2404.16130v2``), ``arxiv.org/abs/...`` or
-        ``arxiv.org/pdf/...``, or a direct ``http(s)`` URL ending in ``.pdf``.
-    cache_dir:
-        Directory for ``<sha1>.pdf`` files (default: ``raw_docs_dir/pdf_cache``).
-    client:
-        Optional ``httpx.Client`` for tests; production uses a temporary client
-        with ``timeout_s`` and redirects enabled.
-    extract_pdf_text_fn:
-        Optional ``(path, max_chars) -> str`` override for unit tests (skips
-        pymupdf when set).
-    max_pdf_bytes:
-        Refuse downloads larger than this (default 25 MiB).
-    max_chars:
-        Truncate extracted text at this many characters (default 400k).
-    timeout_s:
-        Per-request HTTP timeout in seconds (default 30).
-
-    Raises
-    ------
-    FetchPdfError
-        Invalid input, HTTP failure, oversized file, or non-PDF payload.
-    """
+   
     if not arxiv_id_or_pdf_url or not arxiv_id_or_pdf_url.strip():
         raise FetchPdfError("Empty input — provide an arXiv id or a .pdf URL.")
 

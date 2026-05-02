@@ -1,15 +1,3 @@
-"""Cross-source conflict detection for evidence behind a sub-question (Tuần 4, ADR-028).
-
-**When to use**: After the Synthesizer draft is written and before the Critic runs.
-Combine cheap **regex/heuristic** scans (numbers + common units) with optional
-**Sonnet structured** refinement when :attr:`Settings.compare_sources_mode` is
-``auto`` and the router marks the sub-question as comparative or the heuristic
-already fired.
-
-**Returns**: A :class:`~research_assistant.graph.state.ConflictReport` whose
-``items`` are copied into :class:`~research_assistant.graph.state.Critique.conflicts`.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -90,7 +78,6 @@ def _evidence_body(ev: Evidence) -> str:
 
 
 def extract_quantities(text: str) -> list[tuple[float, str, str]]:
-    """Parse ``(value, normalized_unit, short_context)`` spans from *text*."""
     out: list[tuple[float, str, str]] = []
     for m in _QTY_RE.finditer(text):
         num_s = m.group("num")
@@ -140,14 +127,6 @@ def _severity_for(val_a: float, val_b: float, unit_key: str) -> Literal["low", "
 
 
 def heuristic_compare_sources(evidence: Sequence[Evidence]) -> list[ConflictItem]:
-    """Flag pairwise numeric disagreements across distinct evidence URLs.
-
-    **Use when** ``compare_sources_mode`` is ``heuristic`` or as stage-1 inside
-    ``auto`` before optional LLM refinement.
-
-    **Returns**:
-        Possibly-empty list of :class:`ConflictItem` with ``detection="heuristic"``.
-    """
     by_label: dict[str, list[tuple[float, str, str]]] = {}
     urls: dict[str, str] = {}
     for ev in evidence:
@@ -272,28 +251,7 @@ def build_conflict_report(
     cost_before: float = 0.0,
     per_query_cap_usd: float | None = None,
 ) -> tuple[ConflictReport, float]:
-    """Build a :class:`ConflictReport` for one sub-question.
 
-    Parameters
-    ----------
-    sub_q:
-        Current sub-question (wording drives ``auto`` comparative probe).
-    evidence:
-        Retrieved evidence rows for this sub-question.
-    draft:
-        Latest synthesizer draft (context for LLM refinement).
-    mode:
-        When ``None``, reads :attr:`Settings.compare_sources_mode`.
-    cost_before:
-        Accumulated query cost before this step (ADR-011 pre-flight).
-    per_query_cap_usd:
-        Hard cap for the query; ``None`` skips additional checks in LLM helper.
-
-    Returns
-    -------
-    (report, cost_delta_usd)
-        ``cost_delta_usd`` includes any Sonnet structured call in ``auto`` mode.
-    """
     settings = get_settings()
     resolved = mode if mode is not None else settings.compare_sources_mode
     cap = per_query_cap_usd if per_query_cap_usd is not None else None

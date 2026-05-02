@@ -1,16 +1,3 @@
-"""Rule-based tool routing for retrieval (PLAN stage-1 router, ADR-027).
-
-Maps sub-question text (+ optional rationale) to a heuristic **intent**, then to
-an ordered tool list (≤ ``Settings.tool_router_max_tools``) drawn from:
-
-* ``vector_search`` — seeded Chroma corpus
-* ``web_search`` — Tavily (via injected ``web_search_with_fallback`` in graph)
-* ``academic_search`` — arXiv metadata
-
-The graph retriever merges and de-duplicates hits in tool order until the
-candidate pool is full — no LLM in the router for v1.
-"""
-
 from __future__ import annotations
 
 import re
@@ -63,11 +50,6 @@ RETRIEVAL_TOOL_IDS: frozenset[str] = frozenset({"vector_search", "web_search", "
 
 
 def sanitize_planner_suggested_tools(raw: list[str] | None) -> list[str]:
-    """Keep only known retrieval tool ids, first-seen order; default ``web_search``.
-
-    Used for :class:`~research_assistant.graph.state.SubQuestion.suggested_tools`
-    and for comparing against the rule-based router.
-    """
     if not raw:
         return ["web_search"]
     out: list[str] = []
@@ -85,13 +67,10 @@ def retrieval_tool_plan_differs_from_planner(
     planner_tools: list[str],
     router_ordered_tools: list[str],
 ) -> bool:
-    """True when sanitized planner order differs from the router's order (execution uses router)."""
     return sanitize_planner_suggested_tools(planner_tools) != list(router_ordered_tools)
 
 
 class ToolPlan(BaseModel):
-    """Concrete tool order derived from heuristic intent."""
-
     intent: Intent
     ordered_tools: list[str] = Field(
         ...,
@@ -109,10 +88,6 @@ class ToolPlan(BaseModel):
 
 
 def classify_intent(question: str, rationale: str = "") -> Intent:
-    """Assign a deterministic intent bucket from wording (EN + VI heuristics).
-
-    Priority: comparative → internal corpus → academic → factual (default).
-    """
     blob = f"{question} {rationale}".strip().lower()
     if _COMPARATIVE.search(blob):
         return "comparative"
@@ -124,7 +99,6 @@ def classify_intent(question: str, rationale: str = "") -> Intent:
 
 
 def build_tool_plan(intent: Intent, *, max_tools: int) -> ToolPlan:
-    """Select up to ``max_tools`` tools for ``intent`` (stable order within intent)."""
     bounded = max(1, max_tools)
     raw = list(_INTENT_ORDER[intent])[:bounded]
     return ToolPlan(intent=intent, ordered_tools=list(raw))
@@ -136,5 +110,4 @@ def plan_for_sub_question(
     *,
     max_tools: int,
 ) -> ToolPlan:
-    """End-to-end: classify then build the :class:`ToolPlan`."""
     return build_tool_plan(classify_intent(question, rationale), max_tools=max_tools)
