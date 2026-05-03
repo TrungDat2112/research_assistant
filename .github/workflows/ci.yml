@@ -31,6 +31,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Opt in to Node 24 for JS actions (GitHub deprecation of Node 20 on runners).
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - uses: actions/checkout@v4
 
