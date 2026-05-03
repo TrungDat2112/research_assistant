@@ -47,7 +47,6 @@ class _PlanItemDraft(BaseModel):
 
 
 class _PlanDraft(BaseModel):
-
     sub_questions: list[_PlanItemDraft] = Field(
         ...,
         description="Between 3 and 7 sub-questions that together cover the user query.",

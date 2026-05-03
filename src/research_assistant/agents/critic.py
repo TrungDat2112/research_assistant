@@ -72,7 +72,7 @@ def paragraph_citation_coverage(text: str) -> float:
 
 
 def consistency_score_from_conflicts(items: Sequence[ConflictItem]) -> int:
-    
+
     if not items:
         return 5
     has_high = any(x.severity == "high" for x in items)

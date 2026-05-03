@@ -76,14 +76,20 @@ def test_consistency_score_from_conflicts() -> None:
     assert consistency_score_from_conflicts([]) == 5
     assert (
         consistency_score_from_conflicts(
-                [ConflictItem(summary="low only row ok", severity="low", involved_ref_labels=["ev_sq_1_1"])],
+            [
+                ConflictItem(
+                    summary="low only row ok", severity="low", involved_ref_labels=["ev_sq_1_1"]
+                )
+            ],
         )
         == 4
     )
     assert (
         consistency_score_from_conflicts(
             [
-                ConflictItem(summary="medium severity issue", severity="medium", involved_ref_labels=[]),
+                ConflictItem(
+                    summary="medium severity issue", severity="medium", involved_ref_labels=[]
+                ),
                 ConflictItem(summary="low severity tail", severity="low", involved_ref_labels=[]),
             ],
         )
@@ -92,7 +98,9 @@ def test_consistency_score_from_conflicts() -> None:
     assert (
         consistency_score_from_conflicts(
             [
-                ConflictItem(summary="high severity block", severity="high", involved_ref_labels=[]),
+                ConflictItem(
+                    summary="high severity block", severity="high", involved_ref_labels=[]
+                ),
             ],
         )
         == 2

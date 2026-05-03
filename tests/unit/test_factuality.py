@@ -91,18 +91,18 @@ def test_judge_factuality_uses_mocked_structured(monkeypatch: pytest.MonkeyPatch
         _ = model, prompt, system, kwargs
         return (
             fac.FactualityJudgeOutput(
-                    judgments=[
-                        fac.FactualityClaimJudgment(
-                            claim_index=0,
-                            verdict="supported",
-                            rationale_brief="yes",
-                        ),
-                        fac.FactualityClaimJudgment(
-                            claim_index=1,
-                            verdict="unsupported",
-                            rationale_brief="no mention",
-                        ),
-                    ],
+                judgments=[
+                    fac.FactualityClaimJudgment(
+                        claim_index=0,
+                        verdict="supported",
+                        rationale_brief="yes",
+                    ),
+                    fac.FactualityClaimJudgment(
+                        claim_index=1,
+                        verdict="unsupported",
+                        rationale_brief="no mention",
+                    ),
+                ],
             ),
             LLMCallResult(
                 text="{}",

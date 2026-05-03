@@ -15,8 +15,6 @@ _V = TypeVar("_V")
 
 
 class SubQuestion(BaseModel):
-
-
     id: str = Field(..., pattern=r"^sq_\d+$", description="Sub-question id, e.g. 'sq_1'.")
     question: str = Field(..., min_length=3)
     rationale: str = Field(default="", description="Why this sub-question matters.")
@@ -183,7 +181,6 @@ def _merge_dict(left: dict[_K, _V], right: dict[_K, _V]) -> dict[_K, _V]:
 
 
 class ResearchState(TypedDict, total=False):
-
     query: str
     output_language: Literal["vi", "en"]
 

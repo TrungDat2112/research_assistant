@@ -46,7 +46,6 @@ def observe(
     capture_output: bool = True,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
 
-
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         cache: dict[str, Callable[P, R]] = {}
 
@@ -59,7 +58,6 @@ def observe(
             decorated = cache.get("fn")
             if decorated is None:
                 from langfuse import observe as _lf_observe
-
 
                 lf_decorator = _lf_observe(
                     name=name,

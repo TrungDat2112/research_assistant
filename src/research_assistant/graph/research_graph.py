@@ -480,7 +480,6 @@ def run_research(
     if compare_sources_mode_override is not None:
         initial["compare_sources_mode_override"] = compare_sources_mode_override
 
-
     trace_id = current_trace_id()
     if trace_id:
         initial["trace_id"] = trace_id
@@ -495,7 +494,6 @@ def run_research(
     )
     final = cast(ResearchState, graph.invoke(initial))
 
-
     update_trace_io(
         input={"query": query, "output_language": output_language},
         output={
@@ -509,7 +507,6 @@ def run_research(
     )
 
     if flush_langfuse:
-
         _lf_flush()
 
     return final

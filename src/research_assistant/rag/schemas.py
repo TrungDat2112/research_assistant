@@ -10,8 +10,6 @@ DocType = Literal["arxiv", "blog", "html", "pdf", "other"]
 
 
 class SourceDoc(BaseModel):
-
-
     source_id: str = Field(..., min_length=3, max_length=256)
     url: str = Field(..., description="Canonical source URL (may be a DOI/arxiv link).")
     title: str = Field(..., min_length=1)
@@ -34,7 +32,6 @@ class SourceDoc(BaseModel):
     def make_source_id(cls, url: str) -> str:
         """Deterministic id from a URL — useful for HTML sources without ids."""
         return "h_" + hashlib.sha1(url.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
-
 
 
 Document: TypeAlias = SourceDoc
@@ -67,7 +64,6 @@ class ChunkMetadata(BaseModel):
 
 
 class Chunk(BaseModel):
-
     chunk_id: str = Field(..., pattern=r"^[A-Za-z0-9_\-:.]{3,128}$")
     text: str = Field(..., min_length=1)
     body: str = Field(..., min_length=1)

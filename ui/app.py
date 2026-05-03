@@ -1,6 +1,4 @@
-"""Streamlit UI for the Research Assistant Agent (minimal dev UI).
-
-"""
+"""Streamlit UI for the Research Assistant Agent (minimal dev UI)."""
 
 from __future__ import annotations
 

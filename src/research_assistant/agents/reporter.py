@@ -53,7 +53,6 @@ def _renumber_draft_content(
     global_offset: int,
 ) -> str:
 
-
     def _sub(match: re.Match[str]) -> str:
         n = int(match.group(1))
         if 1 <= n <= len(evidence_for_q):

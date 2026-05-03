@@ -88,7 +88,7 @@ def _host_matches_suffix(host: str, suffix: str) -> bool:
 
 
 def web_trust_tier_for_url(url: str) -> WebTrustTier:
- 
+
     host, _ = _host_and_path(url)
     if not host:
         return "medium"
@@ -143,7 +143,7 @@ def web_search(
     exclude_domains: list[str] | None = None,
     client: _SearchClient | None = None,
 ) -> list[SearchHit]:
-    
+
     if not query or not query.strip():
         raise WebSearchError("Empty query — refusing to call Tavily.")
 

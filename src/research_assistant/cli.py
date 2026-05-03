@@ -104,7 +104,6 @@ def run(argv: list[str]) -> int:
         final_state.get("max_iterations_reached", False),
     )
 
-
     _encoding = getattr(sys.stdout, "encoding", "") or ""
     if _encoding.lower() not in {"utf-8", "utf8"}:
         reconfigure = getattr(sys.stdout, "reconfigure", None)

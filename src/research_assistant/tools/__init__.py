@@ -1,2 +1,1 @@
-"""External tools callable by agents.
-"""
+"""External tools callable by agents."""

@@ -11,8 +11,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-
-
     model_config = SettingsConfigDict(
         env_file=_REPO_ROOT / ".env",
         env_file_encoding="utf-8",
@@ -62,7 +60,6 @@ class Settings(BaseSettings):
     )
     output_language: Literal["vi", "en"] = Field(default="vi")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO")
-
 
     embedding_model: str = Field(
         default="BAAI/bge-m3",

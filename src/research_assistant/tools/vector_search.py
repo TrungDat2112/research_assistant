@@ -65,7 +65,7 @@ def vector_search(
     embedder: EmbeddingModel | None = None,
     bm25_index: BM25CorpusIndex | None = None,
 ) -> list[SearchHit]:
-   
+
     if not query or not query.strip():
         raise VectorSearchError("Empty query — refusing vector search.")
 

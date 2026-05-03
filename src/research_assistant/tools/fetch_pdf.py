@@ -153,7 +153,7 @@ def fetch_pdf(
     max_chars: int = MAX_EXTRACT_CHARS,
     timeout_s: float = HTTP_TIMEOUT_S,
 ) -> Document:
-   
+
     if not arxiv_id_or_pdf_url or not arxiv_id_or_pdf_url.strip():
         raise FetchPdfError("Empty input — provide an arXiv id or a .pdf URL.")
 
