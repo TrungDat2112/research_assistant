@@ -1,5 +1,7 @@
 # Research Assistant Agent
 
+[![CI](https://github.com/TrungDat2112/research_assistant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TrungDat2112/research_assistant/actions/workflows/ci.yml)
+
 AI agent tự động nhận câu hỏi nghiên cứu → lập kế hoạch → tìm kiếm đa nguồn → tổng hợp có citation → xuất báo cáo Markdown/PDF.
 
 Dựa trên nguyên tắc Stanford *"How to Build AI Agents"* (xem `AI_building_principles.png`). Kiến trúc đầy đủ trong [`PLAN.md`](./PLAN.md), lý do chọn công nghệ trong [`DECISIONS.md`](./DECISIONS.md).
@@ -37,6 +39,14 @@ API keys cần lấy:
 | Anthropic | <https://console.anthropic.com> | Planner (Sonnet 4.5) + Synthesizer (Haiku) |
 | Tavily | <https://tavily.com> | Web search |
 | Langfuse Cloud | <https://cloud.langfuse.com> | Tracing / observability (optional) |
+
+## CI (GitHub Actions)
+
+Lint, type-check, và pytest chạy trong [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
+
+**Gắn CI với PR (bắt buộc CI xanh trước khi merge vào branch chính):** chỉ chủ repo cấu hình trên GitHub — làm theo [`docs/ci-branch-protection.md`](./docs/ci-branch-protection.md) (Bước 7 + **Bước 8**: xác nhận sau merge, script `scripts/verify_ci_local.py`).
+
+**Deploy Streamlit Space (Hugging Face, Docker SDK):** xem [`docs/deploy-huggingface.md`](./docs/deploy-huggingface.md) — token `HF_TOKEN` trên GitHub; API keys chạy app đặt trên HF Space Secrets.
 
 ## Chạy
 

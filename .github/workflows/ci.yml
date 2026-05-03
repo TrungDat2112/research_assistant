@@ -1,16 +1,4 @@
-# CI — ruff, mypy, pytest (no API keys; tests mock external services).
-# Branch / trigger policy: see PROGRESS / handoff docs (main + PR + manual).
-
 name: CI
-
-# --- Step 6 — Permissions & queue -------------------------------------------------
-# Minimal GITHUB_TOKEN: read repo for checkout/sync only — no deployments, secrets, or content writes here.
-# If CI fails immediately with permission errors (uncommon): repo Settings → Actions → General →
-#   "Workflow permissions" must allow workflows to run; org-owned repos may impose stricter defaults.
-# Fork PR workflows: forks from outside collaborators may show "Approve and run" once (GitHub gate).
-#
-# Queue: At most one active run per ref (same branch name or merge ref for PR #N). Older runs on that
-# ref are cancelled — saves Actions minutes without blocking unrelated branches.
 
 permissions:
   contents: read
@@ -23,7 +11,6 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Step 6 (queue): one group per workflow + ref → cancel stale runs when pushing again.
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -31,13 +18,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Opt in to Node 24 for JS actions (GitHub deprecation of Node 20 on runners).
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
-      # Step 4: uv on PATH, managed Python 3.11 (UV_PYTHON), wheel cache from uv.lock/pyproject.toml.
       - name: Setup uv
         uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -49,7 +34,6 @@ jobs:
       - name: Sync dependencies
         run: uv sync --all-extras --frozen
 
-      # Step 5 — AGENTS.md §2.3 + §7 (format → lint → mypy strict → pytest; no API keys).
       - name: Ruff format
         run: uv run ruff format --check .
 
@@ -61,3 +45,31 @@ jobs:
 
       - name: Pytest
         run: uv run pytest
+
+  deploy_hf:
+    name: Deploy to Hugging Face Space
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    concurrency:
+      group: deploy-hf-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Push main to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "Skipping deploy to HF Space: HF_TOKEN secret is unset (OK for forks / local-only)." >&2
+            exit 0
+          fi
+          HF_USER="${HF_USERNAME:-orion211203}"
+          git remote remove hf 2>/dev/null || true
+          git remote add hf "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/research-assistant.git"
+          git push hf HEAD:main

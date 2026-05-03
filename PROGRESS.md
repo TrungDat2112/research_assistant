@@ -8,8 +8,9 @@
 ## Trạng thái hiện tại
 
 **Phase**: `Tuần 4 roadmap §10 đóng (harness + ADR-027…031 + ADR-029); đo exit criteria factuality/cost offline khi cần. Tiếp theo: Tuần 5 — safety / budget / observability (PLAN.md §10).`
-**Last updated**: 2026-04-29
+**Last updated**: 2026-05-02
 **Last session summary**:
+- **GitHub Actions (Bước 7–8 — PR workflow + verify)**: workflow `.github/workflows/ci.yml` CI xanh; `docs/ci-branch-protection.md` + `scripts/verify_ci_local.py`; PR template; README mục CI.
 - **Docs Tuần 4**: `PLAN.md` §10 snapshot 2026-04-29 + checklist Tuần 4; `PROGRESS.md` tick mục 12, Phase → Tuần 5.
 - **Factuality eval (ADR-029)**: `data/eval/factuality_eval_20.json` (15 EN + 5 VI, 3–5 gold claims/query); `eval/factuality.py` + `scripts/run_factuality_eval.py` + judge prompts; metric **mean_supported_ratio**; tests `test_factuality.py`.
 - **Retrieval eval 100** (`data/eval/retrieval_eval_100.json`): 70 EN + 30 VI, multi-gold qrels; `expand_retrieval_eval.py --write` validate theo manifest; `run_retrieval_eval.py` default → file này; `RetrievalEvalItem.language` trong `eval/retrieval.py`.
@@ -306,6 +307,13 @@ Chi tiết lý do ghi trong `DECISIONS.md` ADR-007 → ADR-011.
 ---
 
 ## Log session
+
+### 2026-05-02 — GitHub Actions CI + Bước 7 PR workflow
+- **`ci.yml`**: CI (job `test`) — chỉ chủ repo bật **required status checks** trên Settings (classic branch rule hoặc Rulesets).
+- **`docs/ci-branch-protection.md`**: checklist Option A/B, tên check **CI** / **CI / test** sau khi có run xanh; **Bước 8**: xác nhận sau merge + bảng troubleshooting + lệnh mirror CI.
+- **`scripts/verify_ci_local.py`**: chạy cùng thứ tự lệnh như job `test` (shortcut trước khi push).
+- **`.github/pull_request_template.md`**: checklist local + nhắc CI + (optional) verify script.
+- **`README.md`**: mục CI + link tài liệu bảo vệ nhánh và Bước 8.
 
 ### 2026-04-29 — Session 35 (Tuần 4 docs — PLAN §10 / checklist)
 - **`PLAN.md` §10**: snapshot **2026-04-29** (Tuần 1–4); mục **Tuần 4** mở rộng: tools + trust tiers, planner/router, compare_sources, critic/reporter, factuality, smoke metrics + overrides; exit criteria tách **đo API** vs **toolchain**.
