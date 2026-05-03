@@ -35,4 +35,4 @@ docker run --rm -p 7860:7860 \
 
 - First Space build pulls heavy deps (sentence-transformers, chromadb); expect long build minutes.
 - Image size grows with PyTorch/embeddings stack; HF free-tier build limits apply.
-- Avoid `--force` on `git push` to HF unless you intentionally overwrite history on the Space.
+- **Push rejected (`fetch first`)**? The Space repo may have commits not on GitHub. The **`deploy_hf` job uses `git push --force`** so **GitHub `main` replaces** Space `main`. HF-only edits are overwritten — change code on GitHub.

@@ -72,4 +72,6 @@ jobs:
           HF_USER="${HF_USERNAME:-orion211203}"
           git remote remove hf 2>/dev/null || true
           git remote add hf "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/research-assistant.git"
-          git push hf HEAD:main
+          # HF Space may have commits not in GitHub (web README, etc.). This job mirrors GitHub main → Space.
+          git fetch hf main || true
+          git push hf HEAD:main --force
