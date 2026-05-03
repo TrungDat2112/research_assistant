@@ -2,7 +2,7 @@
 
 ## One-time HF Space setup
 
-1. Create an empty **Docker SDK** Space under your account (`Settings` tab can pick **Docker** if README does not declare SDK).
+1. Create an empty **Docker SDK** Space under your account, or reuse an existing Space. The **`README.md` at repo root must start with YAML frontmatter** (see repo `README.md` — `sdk: docker`, optional `app_port: 7860`). Without it, HF shows “Missing configuration in README”.
 2. **Repository secrets (`ANTHROPIC_API_KEY`, `TAVILY_API_KEY`, Langfuse)`** belong in HF: **Space → Settings → Repository secrets**.  
    Secrets stored only on **GitHub** are **not** visible to the running container on HF unless you bake them elsewhere (avoid).
 3. Generate a HF **token** with write access (`write`/`repo` scopes as required by HF) for CI to git-push to the Space.
@@ -13,11 +13,10 @@ Add **`HF_TOKEN`**: HF access token used only by workflow job `deploy_hf` to pus
 
 **(Optional)** **`HF_USERNAME`**: HF account username for git HTTPS (defaults to **`orion211203`** inside the workflow if unset). Set if deploy runs under another user.
 
-## README / Space card YAML (optional)
+## Space card metadata (`README.md`)
 
-For the Space card emoji/title/color, prepend a YAML front matter block at the **very top** of `README.md` on the HF branch ([HF docs — Space metadata](https://huggingface.co/docs/hub/spaces-config-reference)).
-
-That duplicates purpose with the GitHub README; alternatively set metadata in HF UI instead of YAML.
+The **first lines** of root `README.md` must be YAML front matter (title, `sdk: docker`, …) so the Hub can configure the Space ([reference](https://huggingface.co/docs/hub/spaces-config-reference)).  
+This repo embeds that block at the top of `README.md` (also used on GitHub; some projects keep a separate README for HF-only — our CD mirrors the same file).
 
 ## Local Docker smoke
 
