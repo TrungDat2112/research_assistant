@@ -56,13 +56,7 @@ with st.sidebar:
             "LANGFUSE": "on" if settings.langfuse_enabled else "off",
         },
     )
-    st.subheader("Budget (ADR-011)")
-    st.write(
-        {
-            "per_query_cap_usd": settings.per_query_cap_usd,
-            "max_budget_usd": settings.max_budget_usd,
-        },
-    )
+
 
 
 query = st.text_area(
