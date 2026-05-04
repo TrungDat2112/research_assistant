@@ -58,7 +58,6 @@ with st.sidebar:
     )
 
 
-
 query = st.text_area(
     "Câu hỏi nghiên cứu",
     placeholder="Ví dụ: So sánh LoRA và QLoRA cho fine-tuning LLM năm 2025 ...",
