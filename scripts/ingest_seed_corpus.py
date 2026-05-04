@@ -3,18 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 import time
 from pathlib import Path
-
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from research_assistant.config import get_settings
 from research_assistant.rag.chunking import ChunkingConfig, chunk_documents
 from research_assistant.rag.embedding import EmbeddingModel
 from research_assistant.rag.ingest import SeedConfig, load_seed_corpus
 from research_assistant.rag.vector_store import ChromaStore
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 logger = logging.getLogger("ingest")
 
