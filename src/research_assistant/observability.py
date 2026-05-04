@@ -23,7 +23,6 @@ ObservationType = Literal[
 ]
 
 
-
 def is_enabled() -> bool:
     """Return ``True`` iff Langfuse credentials are configured."""
     return get_settings().langfuse_enabled
@@ -65,7 +64,6 @@ def observe(
     return decorator
 
 
-
 _CLIENT_CACHE: dict[str, Any] = {}
 
 
@@ -89,7 +87,6 @@ def _client() -> Any | None:
     return client
 
 
-
 def current_trace_id() -> str | None:
     client = _client()
     if client is None:
@@ -110,7 +107,6 @@ def current_trace_url() -> str | None:
     except Exception:  # pragma: no cover
         return None
     return cast(str | None, url)
-
 
 
 def update_span(

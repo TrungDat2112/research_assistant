@@ -69,7 +69,6 @@ def _summarise_for_prepend(doc: SourceDoc, max_chars: int = 400) -> str:
     return f"[{doc.title}] {base}".strip()
 
 
-
 @dataclass(frozen=True)
 class ChunkingConfig:
     model_id: str

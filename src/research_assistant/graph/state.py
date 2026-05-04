@@ -9,6 +9,7 @@ _T = TypeVar("_T")
 _K = TypeVar("_K")
 _V = TypeVar("_V")
 
+
 class SubQuestion(BaseModel):
     id: str = Field(..., pattern=r"^sq_\d+$", description="Sub-question id, e.g. 'sq_1'.")
     question: str = Field(..., min_length=3)

@@ -1,5 +1,4 @@
-"""Tests for :mod:`research_assistant.tools.fetch_pdf`.
-"""
+"""Tests for :mod:`research_assistant.tools.fetch_pdf`."""
 
 from __future__ import annotations
 

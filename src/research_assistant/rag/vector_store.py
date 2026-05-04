@@ -51,7 +51,6 @@ class ChromaStore:
             metadata={"hnsw:space": self.distance},
         )
 
-
     def reset(self) -> None:
         try:
             self._client.delete_collection(self.collection_name)
@@ -88,7 +87,6 @@ class ChromaStore:
             self.collection_name,
             self.count(),
         )
-
 
     def search(
         self,
@@ -183,7 +181,6 @@ class ChromaStore:
             )
             for cid, doc, meta in zip(out_ids, docs, metas, strict=True)
         ]
-
 
     def count(self) -> int:
         return int(self._collection.count())

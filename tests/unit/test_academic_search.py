@@ -128,7 +128,7 @@ def test_academic_search_dedupes_by_arxiv_id() -> None:
     backend = _RecordingSearch(
         [
             _stub("2305.14314v1"),
-            _stub("2305.14314v1"),  
+            _stub("2305.14314v1"),
             _stub("2106.09685v2", title="LoRA: Low-Rank Adaptation"),
         ],
     )

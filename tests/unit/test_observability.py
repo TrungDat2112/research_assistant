@@ -1,5 +1,4 @@
-"""Tests for the Langfuse observability shim.
-"""
+"""Tests for the Langfuse observability shim."""
 
 from __future__ import annotations
 

@@ -73,7 +73,6 @@ def _stub_structured_llm(
     return _fn
 
 
-
 _PLANNER_DRAFTS_OK: list[dict[str, Any]] = [
     {"question": "Question one", "rationale": "r1", "dependency_ids": []},
     {"question": "Question two", "rationale": "r2", "dependency_ids": ["sq_1"]},
@@ -92,7 +91,7 @@ def test_planner_returns_plan_from_structured_output(monkeypatch: pytest.MonkeyP
     assert plan[1].dependency_ids == ["sq_1"]
     assert update["trace"][0].status == "ok"
     assert update["total_cost_usd"] > 0
-    assert update["max_iterations"] == 8  
+    assert update["max_iterations"] == 8
 
 
 def test_planner_respects_higher_prior_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,8 +158,6 @@ def test_planner_falls_back_on_invalid_drafts(monkeypatch: pytest.MonkeyPatch) -
     assert update["trace"][0].status == "error"
 
 
-
-
 def test_synthesize_one_extracts_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "research_assistant.agents.synthesizer.invoke_llm",
@@ -201,8 +198,6 @@ def test_synthesizer_node_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert update["drafts"]["sq_1"].citations[0].marker == 1
     assert update["trace"][0].status == "ok"
     assert "current_sub_question_index" not in update
-
-
 
 
 def test_reporter_renumbers_citations_globally() -> None:
