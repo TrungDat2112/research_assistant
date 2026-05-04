@@ -51,7 +51,6 @@ class ChromaStore:
             metadata={"hnsw:space": self.distance},
         )
 
-    # -- mutation --------------------------------------------------------
 
     def reset(self) -> None:
         try:
@@ -90,7 +89,6 @@ class ChromaStore:
             self.count(),
         )
 
-    # -- query -----------------------------------------------------------
 
     def search(
         self,
@@ -186,7 +184,6 @@ class ChromaStore:
             for cid, doc, meta in zip(out_ids, docs, metas, strict=True)
         ]
 
-    # -- introspection ---------------------------------------------------
 
     def count(self) -> int:
         return int(self._collection.count())

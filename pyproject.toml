@@ -9,31 +9,19 @@ authors = [
     { name = "Research Assistant Team" },
 ]
 
-# ---------------------------------------------------------------------------
-# Runtime dependencies.
-# RAG stack (chromadb, sentence-transformers, trafilatura, arxiv, pymupdf,
-# pyyaml) added for the ingestion pipeline per PLAN.md §5 / ADR-013.
-# ---------------------------------------------------------------------------
 dependencies = [
-    # Orchestration & LLM
     "langgraph>=0.2.50",
     "langchain-anthropic>=0.3.0",
     "langchain-core>=0.3.0",
     "anthropic>=0.39.0",
-    # Config & validation
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
     "python-dotenv>=1.0.1",
-    # Tools
     "tavily-python>=0.5.0",
     "httpx>=0.27.0",
-    # Prompts
     "jinja2>=3.1.4",
-    # Observability
     "langfuse>=2.53.0",
-    # UI
     "streamlit>=1.40.0",
-    # RAG — ingestion, chunking, embedding, vector store (ADR-013)
     "chromadb>=0.5.15",
     "sentence-transformers>=3.0.0",
     "trafilatura>=1.12.0",
@@ -62,9 +50,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/research_assistant"]
 
-# ---------------------------------------------------------------------------
-# Ruff — lint + format
-# ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -108,9 +93,6 @@ ignore = [
 quote-style = "double"
 indent-style = "space"
 
-# ---------------------------------------------------------------------------
-# mypy — strict for src/, relaxed for tests/notebooks/ui
-# ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.11"
 strict = true
@@ -142,9 +124,6 @@ ignore_missing_imports = true
 module = "tests.*"
 disallow_untyped_defs = false
 
-# ---------------------------------------------------------------------------
-# pytest
-# ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]

@@ -1,12 +1,4 @@
 """Tests for the Langfuse observability shim.
-
-We never hit Langfuse for real — the tests verify (a) the shim is a
-transparent passthrough when credentials are absent, and (b) decorated
-functions preserve their signatures / return values / type behaviour.
-
-These tests intentionally do **not** exercise the enabled path. That
-path goes through the real Langfuse SDK and is covered by the verify
-step described in ``PROGRESS.md`` (one real query → check dashboard).
 """
 
 from __future__ import annotations
@@ -21,7 +13,6 @@ from research_assistant.config import get_settings
 
 @pytest.fixture(autouse=True)
 def _clear_settings_cache() -> None:
-    """Ensure :func:`get_settings` re-reads env for each test."""
     get_settings.cache_clear()
 
 
@@ -49,13 +40,7 @@ def test_observe_is_passthrough_when_disabled(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_observe_checks_enablement_per_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Decorator checks ``is_enabled()`` each call rather than freezing at
-    decoration time — important because ``get_settings`` is cached.
 
-    We only test the disabled-path side (enabled path would try to
-    export real spans to Langfuse cloud; that's covered by the manual
-    verify step documented in PROGRESS.md).
-    """
     _disable_langfuse(monkeypatch)
 
     calls: list[int] = []

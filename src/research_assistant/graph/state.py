@@ -9,11 +9,6 @@ _T = TypeVar("_T")
 _K = TypeVar("_K")
 _V = TypeVar("_V")
 
-# ---------------------------------------------------------------------------
-# Value objects
-# ---------------------------------------------------------------------------
-
-
 class SubQuestion(BaseModel):
     id: str = Field(..., pattern=r"^sq_\d+$", description="Sub-question id, e.g. 'sq_1'.")
     question: str = Field(..., min_length=3)
@@ -166,11 +161,6 @@ class StepLog(BaseModel):
     details: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
-# ---------------------------------------------------------------------------
-# Reducers — used by LangGraph to merge node outputs into state
-# ---------------------------------------------------------------------------
-
-
 def _extend_list(left: list[_T], right: list[_T]) -> list[_T]:
 
     return [*left, *right]
@@ -184,42 +174,32 @@ class ResearchState(TypedDict, total=False):
     query: str
     output_language: Literal["vi", "en"]
 
-    # Planning -----------------------------------------------------------
     plan: Annotated[list[SubQuestion], _extend_list]
 
-    # Retrieval ----------------------------------------------------------
     evidence: Annotated[dict[str, list[Evidence]], _merge_dict]
-    # key = sub_question_id  →  list of Evidence for that sub-question.
 
-    # Synthesis ----------------------------------------------------------
     drafts: Annotated[dict[str, Draft], _merge_dict]
-    # key = sub_question_id  →  Draft.
 
-    # Critique -----------------------------------------------------------
     critiques: Annotated[dict[str, Critique], _merge_dict]
     conflict_reports: Annotated[dict[str, ConflictReport], _merge_dict]
     critic_attempts: Annotated[dict[str, int], _merge_dict]
     synth_critic_feedback: str | None
     critic_route_next: Literal["retriever", "tick"] | None
 
-    # Loop control -------------------------------------------------------
     iterations: int
     max_iterations: int
     current_sub_question_index: int
-    # When True, the graph stopped early because ``iterations`` hit
-    # ``max_iterations`` before every sub-question completed (set in reporter).
+
     max_iterations_reached: bool
-    # If set, overrides :attr:`Settings.critic_enabled` for this run only (CLI).
+
     critic_enabled_override: bool | None
-    # If set, overrides :attr:`Settings.tool_router_enabled` for this run (smoke / CLI).
+
     tool_router_enabled_override: bool | None
-    # If set, overrides :attr:`Settings.compare_sources_mode` for this run (smoke / CLI).
+
     compare_sources_mode_override: Literal["off", "heuristic", "auto"] | None
 
-    # Reporting ----------------------------------------------------------
     final_report: str | None
 
-    # Observability & cost -----------------------------------------------
     trace: Annotated[list[StepLog], _extend_list]
     total_cost_usd: float
     per_query_cap_usd: float

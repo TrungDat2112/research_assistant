@@ -1,10 +1,3 @@
-"""Tests for planner / synthesizer / reporter agent nodes.
-
-LLM calls are replaced at module level by monkeypatching the exported
-``invoke_llm`` / ``invoke_structured_llm`` symbols inside each agent
-module. No real Anthropic traffic is generated.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -24,10 +17,6 @@ from research_assistant.graph.state import (
     SubQuestion,
     new_state,
 )
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _hit(i: int) -> SearchHit:
@@ -65,12 +54,6 @@ def _stub_structured_llm(
     tokens_in: int = 120,
     tokens_out: int = 80,
 ) -> Any:
-    """Factory producing a stand-in for :func:`invoke_structured_llm`.
-
-    Returns a ``(_PlanDraft, LLMCallResult)`` tuple with ``drafts`` as the
-    payload, matching the real signature so the planner node can be unit-
-    tested without touching Anthropic.
-    """
 
     def _fn(
         model: str,
@@ -89,10 +72,6 @@ def _stub_structured_llm(
 
     return _fn
 
-
-# ---------------------------------------------------------------------------
-# Planner
-# ---------------------------------------------------------------------------
 
 
 _PLANNER_DRAFTS_OK: list[dict[str, Any]] = [
@@ -113,7 +92,7 @@ def test_planner_returns_plan_from_structured_output(monkeypatch: pytest.MonkeyP
     assert plan[1].dependency_ids == ["sq_1"]
     assert update["trace"][0].status == "ok"
     assert update["total_cost_usd"] > 0
-    assert update["max_iterations"] == 8  # max(8, 3x2) with default critic attempts
+    assert update["max_iterations"] == 8  
 
 
 def test_planner_respects_higher_prior_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -135,7 +114,6 @@ def test_planner_tightens_planned_cap_when_critic_overridden_off(
     st = new_state("Explain RAG")
     st["critic_enabled_override"] = False
     update = planner_node(st)
-    # max(8, 3 sub-questions x 1 attempt) — no Critic retries budgeted.
     assert update["trace"][0].details["planned_max_iterations"] == 8
     assert update["max_iterations"] == 8
 
@@ -151,7 +129,6 @@ def test_planner_drops_unknown_dependency_ids(monkeypatch: pytest.MonkeyPatch) -
         _stub_structured_llm(drafts),
     )
     plan = planner_node(new_state("Q?"))["plan"]
-    # "sq_99" is hallucinated → dropped silently.
     assert plan[0].dependency_ids == []
 
 
@@ -168,7 +145,6 @@ def test_planner_falls_back_when_llm_raises(monkeypatch: pytest.MonkeyPatch) -> 
     assert update["plan"][0].question == "Original query?"
     assert update["trace"][0].status == "error"
     assert update["max_iterations"] == 8  # max(8, 1x2)
-    # Fallback path does not charge any additional cost.
     assert update.get("total_cost_usd", None) is None
 
 
@@ -183,9 +159,6 @@ def test_planner_falls_back_on_invalid_drafts(monkeypatch: pytest.MonkeyPatch) -
     assert update["trace"][0].status == "error"
 
 
-# ---------------------------------------------------------------------------
-# Synthesizer
-# ---------------------------------------------------------------------------
 
 
 def test_synthesize_one_extracts_citations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -200,7 +173,6 @@ def test_synthesize_one_extracts_citations(monkeypatch: pytest.MonkeyPatch) -> N
     assert draft.sub_question_id == "sq_1"
     markers = sorted(c.marker for c in draft.citations)
     assert markers == [1, 2, 3]
-    # Evidence 1,2,3 should be flagged used; 4 does not exist.
     assert all(e.used for e in evidence)
 
 
@@ -231,9 +203,6 @@ def test_synthesizer_node_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "current_sub_question_index" not in update
 
 
-# ---------------------------------------------------------------------------
-# Reporter (deterministic — no LLM mocking)
-# ---------------------------------------------------------------------------
 
 
 def test_reporter_renumbers_citations_globally() -> None:
@@ -256,11 +225,8 @@ def test_reporter_renumbers_citations_globally() -> None:
     )
     assert "Fact A [^1]" in report
     assert "Fact B [^2]" in report
-    # sq_2 local 1 → global 3 (offset = len(sq_1 evidence) = 2).
     assert "Fact C [^3]" in report
-    # sq_2 local 3 → global 5.
     assert "Fact D [^5]" in report
-    # References list should have 5 entries (2 + 3).
     assert report.count("](https://example.com/") == 5
 
 

@@ -1,8 +1,4 @@
 """Tests for :mod:`research_assistant.tools.fetch_pdf`.
-
-HTTP is exercised via ``httpx.MockTransport``; pymupdf is mocked where the
-exercise is fetch/cache logic, and patched once to satisfy the "mock pymupdf"
-contract without requiring a real PDF fixture.
 """
 
 from __future__ import annotations

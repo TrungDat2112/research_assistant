@@ -12,97 +12,210 @@ pinned: false
 
 [![CI](https://github.com/TrungDat2112/research_assistant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TrungDat2112/research_assistant/actions/workflows/ci.yml)
 
-AI agent tự động nhận câu hỏi nghiên cứu → lập kế hoạch → tìm kiếm đa nguồn → tổng hợp có citation → xuất báo cáo Markdown/PDF.
-
-Dựa trên nguyên tắc Stanford *"How to Build AI Agents"* (xem `AI_building_principles.png`). Kiến trúc đầy đủ trong [`PLAN.md`](./PLAN.md), lý do chọn công nghệ trong [`DECISIONS.md`](./DECISIONS.md).
-
-> **Status**: `Tuần 1 — Skeleton` (Pre-agent logic). Xem [`PROGRESS.md`](./PROGRESS.md) cho trạng thái mới nhất.
+Agent nghiên cứu chủ đề: **lập kế hoạch (sub-questions)** → **thu thập đa nguồn** (corpus, web, arXiv…) → **RAG hai giai đoạn** (hybrid BM25+dense → cross-encoder rerank) → **tổng hợp có citation** `[^N]` → **kiểm Critic / mâu thuẫn nguồn** → **báo cáo Markdown**. Nguyên tắc nền xem [`AI_building_principles.png`](./AI_building_principles.png) (Stanford *How to Build AI Agents*).
 
 ---
 
-## Yêu cầu hệ thống
+## Mục lục
 
-- Python **3.11+** (test trên 3.12).
-- [`uv`](https://docs.astral.sh/uv/) package manager.
-- Git.
-- OS: Windows / macOS / Linux.
+- [Tại sao dự án này](#tại-sao-dự-án-này)
+- [Công nghệ chính](#công-nghệ-chính)
+- [Yêu cầu & cài đặt](#yêu-cầu--cài-đặt)
+- [Biến môi trường](#biến-môi-trường)
+- [Corpus (RAG) — ingest](#corpus-rag--ingest)
+- [Chạy ứng dụng](#chạy-ứng-dụng)
+- [Eval & scripts](#eval--scripts)
+- [Kiểm thử & chất lượng code](#kiểm-thử--chất-lượng-code)
+- [CI/CD & Hugging Face Space](#cicd--hugging-face-space)
+- [Cấu trúc thư mục](#cấu-trúc-thư-mục)
+- [Ngân sách & an toàn](#ngân-sách--an-toàn)
+- [Tài liệu dự án](#tài-liệu-dự-án)
+- [License](#license)
 
-## Setup
+---
 
-```powershell
-# 1. Clone + vào repo
-git clone <url> research-assistant
-cd research-assistant
+## Tại sao dự án này
 
-# 2. Tạo venv + cài deps (runtime + dev)
+- Pipeline **đa agent** qua **LangGraph** (planner → retriever → synthesizer → so sánh nguồn → critic → reporter).
+- **Tool router** heuristic (intent → thứ tự `vector_search`, `web_search`, `academic_search`…).
+- **Trace** có thể bật với **Langfuse Cloud** (tuỳ chọn).
+
+Trạng thái roadmap: Tuần 1–4 đã khép theo [`PLAN.md`](./PLAN.md) roadmap mục 10 (chi tiết cập nhật trong [`PROGRESS.md`](./PROGRESS.md)). Tiếp theo chủ đề Tuần 5: guardrails, budget, polish observability.
+
+---
+
+## Công nghệ chính
+
+| Lớp | Công cụ |
+|-----|---------|
+| Runtime | Python 3.11+, [`uv`](https://docs.astral.sh/uv/) |
+| Đồ thị agent | LangGraph |
+| LLM | Anthropic Claude (Sonnet planner/critic; Haiku synthesizer — xem [`DECISIONS.md`](./DECISIONS.md)) |
+| Tìm kiếm web | Tavily |
+| Embedding / rerank | `BAAI/bge-m3`, `bge-reranker-v2-m3` (tuỳ cấu hình) |
+| Vector store (dev) | Chroma persistent |
+| Retrieval | Hybrid BM25 + dense, HyDE tuỳ chọn |
+| UI | Streamlit (`ui/app.py`) |
+| Observability | Langfuse (tuỳ chọn) |
+
+---
+
+## Yêu cầu & cài đặt
+
+**Cần:** Python **3.11+**, Git, **[`uv`](https://docs.astral.sh/uv/)**. Hỗ trợ Windows / macOS / Linux.
+
+```bash
+git clone https://github.com/TrungDat2112/research_assistant.git
+cd research_assistant
+
 uv sync --all-extras
-
-# 3. Copy env template và điền key
-copy .env.example .env
-# Mở .env, điền: ANTHROPIC_API_KEY, TAVILY_API_KEY, LANGFUSE_*
+cp .env.example .env   # Windows: copy .env.example .env
+# Chỉnh .env và điền key (Anthropic, Tavily, …)
 ```
 
-API keys cần lấy:
+---
 
-| Dịch vụ | Đăng ký | Dùng cho |
-|---|---|---|
-| Anthropic | <https://console.anthropic.com> | Planner (Sonnet 4.5) + Synthesizer (Haiku) |
-| Tavily | <https://tavily.com> | Web search |
-| Langfuse Cloud | <https://cloud.langfuse.com> | Tracing / observability (optional) |
+## Biến môi trường
 
-## CI (GitHub Actions)
+Xem **[`.env.example`](./.env.example)** làm checklist đầy đủ.
 
-Lint, type-check, và pytest chạy trong [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
+| Biến (tối thiểu để chạy agent thật) | Mục đích |
+|--------------------------------------|-----------|
+| `ANTHROPIC_API_KEY` | Planner, Synthesizer, Critic, compare_sources LLM |
+| `TAVILY_API_KEY` | Web search |
 
-**Gắn CI với PR (bắt buộc CI xanh trước khi merge vào branch chính):** chỉ chủ repo cấu hình trên GitHub — làm theo [`docs/ci-branch-protection.md`](./docs/ci-branch-protection.md) (Bước 7 + **Bước 8**: xác nhận sau merge, script `scripts/verify_ci_local.py`).
+Tuỳ chọn: Langfuse (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`), embedding/rerank/critic/router (xem `.env.example`).
 
-**Deploy Streamlit Space (Hugging Face, Docker SDK):** xem [`docs/deploy-huggingface.md`](./docs/deploy-huggingface.md) — token `HF_TOKEN` trên GitHub; API keys chạy app đặt trên HF Space Secrets.
+**Không commit** `.env`; chỉ commit `.env.example` (placeholder).
 
-## Chạy
+---
 
-```powershell
-# Streamlit UI (có khi hoàn thiện Tuần 1 Part B)
+## Corpus (RAG) — ingest
+
+Để corpus nội bộ và hybrid retrieval hoạt động, cần ít nhất một lần ingest (lần đầu hoặc sau khi đổi model embedding trong `.env`):
+
+```bash
+uv run python scripts/ingest_seed_corpus.py --rebuild
+```
+
+- Cấu hình nguồn seed: [`configs/seed_corpus.yaml`](./configs/seed_corpus.yaml).
+- Chroma lưu tại `data/chroma/` (thường gitignored).
+
+---
+
+## Chạy ứng dụng
+
+### CLI (một câu hỏi, Markdown ra stdout/file)
+
+```bash
+uv run research-assistant "Câu hỏi nghiên cứu của bạn" --language vi --out ./report.md
+```
+
+Tuỳ chọn: `--language en`, `--max-iterations`, `--no-rerank`, `--no-critic` — xem `research-assistant --help`.
+
+### Streamlit
+
+```bash
 uv run streamlit run ui/app.py
+```
 
-# Smoke test
+Trên Hugging Face Space (Docker): xem [**`docs/deploy-huggingface.md`**](./docs/deploy-huggingface.md).
+
+### Docker cục bộ (như HF)
+
+```bash
+docker build -t research-assistant-space .
+docker run --rm -p 7860:7860 \
+  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  -e TAVILY_API_KEY="$TAVILY_API_KEY" \
+  research-assistant-space
+```
+
+---
+
+## Eval & scripts
+
+| Script | Ý nghĩa |
+|--------|---------|
+| [`scripts/smoke_eval.py`](./scripts/smoke_eval.py) | 5 query cố định, metrics chi phí / trace (có `--with-router`, `--with-compare-sources`) |
+| [`scripts/run_retrieval_eval.py`](./scripts/run_retrieval_eval.py) | Retrieval metrics (Recall, NDCG, tuỳ chọn rerank/HyDE) |
+| [`scripts/run_citation_eval.py`](./scripts/run_citation_eval.py) | Citation coverage từ batch Markdown |
+| [`scripts/run_factuality_eval.py`](./scripts/run_factuality_eval.py) | Factuality (LLM judge) — **tốn API** |
+
+Ví dụ dataset trong `data/eval/`. Chi tiết bộ chỉ tiêu: [`PLAN.md`](./PLAN.md).
+
+---
+
+## Kiểm thử & chất lượng code
+
+```bash
 uv run pytest
-
-# Lint + type check
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy
+uv run mypy src/research_assistant
 ```
 
-## Cấu trúc repo
+Mirror đúng thứ tự job CI (sau sync):
 
-Chi tiết trong [`PLAN.md` §12](./PLAN.md). Tóm tắt:
-
-```
-src/research_assistant/
-├── agents/   # planner, synthesizer, critic, reporter
-├── tools/    # web_search, fetch_*, vector_search, ...
-├── rag/      # ingest, chunking, retrieval, rerank (Tuần 2+)
-├── graph/    # LangGraph state machine
-├── prompts/  # Jinja2 templates, versioned
-├── safety/   # guardrails, budget tracker
-├── eval/     # metrics, eval datasets
-└── config.py # pydantic-settings
+```bash
+uv run python scripts/verify_ci_local.py
 ```
 
-## Safety & Budget
+Quy ước và checklist session: **[`AGENTS.md`](./AGENTS.md)**.
 
-- **Hard budget**: $10 tổng, $0.30 per query (ADR-011). Agent refuse khi vượt.
-- **Citation bắt buộc**: Synthesizer cấm claim không có `[^N]` ref; Critic reject khi coverage < 90%.
-- **Không commit secret**: `.env` bị gitignore, chỉ `.env.example` có trong repo.
+---
 
-## Handoff giữa session (AI assistant)
+## CI/CD & Hugging Face Space
 
-Bắt đầu session mới, nhắc AI đọc theo thứ tự:
+- **CI:** [.github/workflows/ci.yml](./.github/workflows/ci.yml) — ruff, mypy, pytest trên push/PR vào `main`.
+- **Bảo vệ nhánh PR / xác nhận sau merge:** [`docs/ci-branch-protection.md`](./docs/ci-branch-protection.md).
+- **Deploy Space:** [`docs/deploy-huggingface.md`](./docs/deploy-huggingface.md).
 
-1. [`PROGRESS.md`](./PROGRESS.md) — đang ở đâu, làm tiếp gì.
-2. [`PLAN.md`](./PLAN.md) — kiến trúc tổng thể.
-3. [`DECISIONS.md`](./DECISIONS.md) — lý do chọn X thay vì Y.
-4. [`AGENTS.md`](./AGENTS.md) — quy ước code & workflow.
+---
+
+## Cấu trúc thư mục
+
+```
+research-assistant/
+├── src/research_assistant/   # agent, tools, rag, graph, prompts, eval, observability…
+├── tests/unit/               # pytest
+├── ui/app.py                  # Streamlit
+├── configs/seed_corpus.yaml  # Corpus seed ingest
+├── scripts/                   # ingest, smoke, eval runners
+├── data/eval/                 # eval datasets / baseline (tuỳ phần thư mục)
+├── Dockerfile                  # HF Space / container
+├── PLAN.md · PROGRESS.md · DECISIONS.md · AGENTS.md
+└── pyproject.toml · uv.lock
+```
+
+Đầy đủ trong [`PLAN.md`](./PLAN.md) phần cấu trúc repo đề xuất.
+
+---
+
+## Ngân sách & an toàn
+
+- Theo ADR: ngân sách dev/tổng và **per-query cap** (xem `.env.example` và [`DECISIONS.md`](./DECISIONS.md) ADR-011).
+- Citation được thiết kế để giảm bịa nội dung; Critic và optionally `compare_sources` hỗ trợ chất lượng.
+- **Không crawl web tự động quy mô lớn** — chỉ search API và URL chỉ định theo luồng agent.
+
+---
+
+## Tài liệu dự án
+
+| File | Nội dung |
+|------|----------|
+| [`PROGRESS.md`](./PROGRESS.md) | Trạng thái hiện tại và việc tiếp theo — **đọc đầu tiên khi vào phiên làm việc mới**. |
+| [`PLAN.md`](./PLAN.md) | Kiến trúc, roadmap, metric mục tiêu |
+| [`DECISIONS.md`](./DECISIONS.md) | ADR (quyết định kỹ thuật) |
+| [`AGENTS.md`](./AGENTS.md) | Hướng dẫn cho AI trong Cursor/Code |
+
+Prompt handoff AI (copy khi đổi phiên):
+
+```text
+Đọc theo thứ tự: PROGRESS.md → PLAN.md → DECISIONS.md → AGENTS.md, rồi giúp tôi với ...
+```
+
+---
 
 ## License
 

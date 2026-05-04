@@ -1,5 +1,3 @@
-"""Unit tests for cross-source comparison (ADR-028)."""
-
 from __future__ import annotations
 
 import pytest

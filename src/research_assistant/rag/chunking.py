@@ -29,11 +29,6 @@ def _get_tokenizer(model_id: str) -> PreTrainedTokenizerBase:
     return tok
 
 
-# ---------------------------------------------------------------------------
-# Section detection
-# ---------------------------------------------------------------------------
-
-
 def _iter_sections(text: str) -> list[tuple[int, str]]:
 
     sections: list[tuple[int, str]] = [(0, "")]
@@ -58,10 +53,6 @@ def _section_at(sections: list[tuple[int, str]], offset: int) -> str:
     return current
 
 
-# ---------------------------------------------------------------------------
-# Contextual prepend
-# ---------------------------------------------------------------------------
-
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -77,10 +68,6 @@ def _summarise_for_prepend(doc: SourceDoc, max_chars: int = 400) -> str:
         base = base[: max_chars - 3].rstrip() + "..."
     return f"[{doc.title}] {base}".strip()
 
-
-# ---------------------------------------------------------------------------
-# Chunker
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
